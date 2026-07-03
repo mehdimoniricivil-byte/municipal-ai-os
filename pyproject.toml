@@ -1,0 +1,18 @@
+[project]
+name = "municipal-ai-os"
+version = "0.1.0"
+description = "Municipal AI OS autonomous collection agent"
+requires-python = ">=3.10"
+dependencies = [
+  "openpyxl>=3.1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
