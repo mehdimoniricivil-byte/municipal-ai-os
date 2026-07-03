@@ -60,7 +60,9 @@ var/collection_agent/runs/<run_id>/
 
 Key outputs:
 
-- `collector_work_queues.json`: today's task list grouped by collector. Each task includes debtor, address, debt amount, recommended action, priority, explanation, and estimated success probability.
+- `collector_work_queues.json`: today's recommendation-only task list grouped by municipal action queue (`CALL`, `FIELD_VISIT`, `NOTICE`, `LEGAL`, `FOLLOW_UP`, `IGNORE`). Each task includes debtor, address, debt amount, recommended action, priority, explanation, and estimated success probability.
+- Action queue files: `daily_call_queue.json`, `daily_visit_queue.json`, `daily_notice_queue.json`, `legal_queue.json`, `daily_follow_up_queue.json`, and `ignore_queue.json`.
+- `manager_dashboard.json`: recommendation-only queue dashboard with counts and summaries by region, zone, collector, and priority score.
 - `manager_morning_briefing.json`: executive briefing with targets, collectible forecast, priority cases, overdue follow-ups, region comparison, collector comparison, and management actions.
 - `run_state.json`: execution history with start/end time, duration, processed files, processed records, recommendations generated, warnings, failures, completed steps, and recovery cursor.
 

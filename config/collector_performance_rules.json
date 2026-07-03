@@ -1,0 +1,15 @@
+{
+  "unchanged_many_threshold": 10,
+  "unchanged_ratio_alert": 0.7,
+  "repeated_visit_no_progress_threshold": 2,
+  "notice_no_payment_threshold": 5,
+  "high_priority_ignored_score": 80,
+  "score_weights": {
+    "base": 70,
+    "improved": 8,
+    "paid": 10,
+    "worsened": -12,
+    "unchanged": -2,
+    "overdue": -5
+  }
+}

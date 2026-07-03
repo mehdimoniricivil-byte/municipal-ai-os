@@ -33,19 +33,68 @@ WORKFLOW_STEPS = [
     "run_ai_assistant",
     "generate_recommendations",
     "generate_work_queue",
+    "generate_daily_snapshot",
     "generate_manager_briefing",
     "generate_executive_intelligence",
 ]
+
+REGION_1_SCHEMA_ALIASES = {
+    "debtor_id": ["شماره_پرونده", "کد_شناسایی"],
+    "debtor": ["نام_متصدی"],
+    "address": ["نشانی_واحد_صنفی"],
+    "mobile": ["شماره_تماس"],
+    "debt_amount": ["بدهی_معوقه"],
+    "due_date": ["تاریخ_پرداخت"],
+    "business_category": ["شغل_واحد"],
+    "legal_status": ["وضعیت_حقوقی", "وضعیت_پرونده"],
+    "zone": ["منطقه", "ناحیه"],
+}
+
+MUNICIPAL_ACTION_QUEUES = {
+    "CALL": "daily_call_queue.json",
+    "FIELD_VISIT": "daily_visit_queue.json",
+    "NOTICE": "daily_notice_queue.json",
+    "LEGAL": "legal_queue.json",
+    "FOLLOW_UP": "daily_follow_up_queue.json",
+    "IGNORE": "ignore_queue.json",
+}
+
+DEFAULT_SNAPSHOT_COMPARISON_RULES = {
+    "paid_debt_threshold": 0,
+    "minimum_debt_change": 0,
+    "cleared_legal_statuses": ["paid", "cleared", "closed", "resolved"],
+}
+
+DEFAULT_COLLECTOR_PERFORMANCE_RULES = {
+    "unchanged_many_threshold": 10,
+    "unchanged_ratio_alert": 0.7,
+    "repeated_visit_no_progress_threshold": 2,
+    "notice_no_payment_threshold": 5,
+    "high_priority_ignored_score": 80,
+    "score_weights": {
+        "base": 70,
+        "improved": 8,
+        "paid": 10,
+        "worsened": -12,
+        "unchanged": -2,
+        "overdue": -5,
+    },
+}
 
 
 @dataclass(frozen=True)
 class DebtRecord:
     record_id: str
+    debtor_id: str
     debtor: str
     address: str
+    mobile: str | None
     region: str
+    zone: str
     collector: str
     debt_amount: float
+    business_category: str | None = None
+    legal_status: str | None = None
     due_date: str | None = None
     last_contact_date: str | None = None
     status: str = "open"
@@ -189,6 +238,7 @@ class CollectionAgent:
         cleaned = []
         for row in artifacts.get("raw_rows", []):
             normalized = {self._normalize_key(k): self._clean_value(v) for k, v in row.items()}
+            self._apply_schema_mapping(normalized)
             normalized["debt_amount"] = self._money(normalized.get("debt_amount", 0))
             cleaned.append(normalized)
         return {"cleaned_rows": cleaned}
@@ -205,11 +255,16 @@ class CollectionAgent:
                 continue
             record = DebtRecord(
                 record_id=self._record_id(row),
+                debtor_id=self._debtor_id(row),
                 debtor=str(row["debtor"]),
                 address=str(row["address"]),
+                mobile=str(row["mobile"]) if row.get("mobile") else None,
                 region=str(row.get("region") or "Unassigned"),
+                zone=str(row.get("zone") or row.get("region") or "Unassigned"),
                 collector=str(row.get("collector") or "Unassigned"),
                 debt_amount=float(row["debt_amount"]),
+                business_category=str(row["business_category"]) if row.get("business_category") else None,
+                legal_status=str(row["legal_status"]) if row.get("legal_status") else None,
                 due_date=row.get("due_date"),
                 last_contact_date=row.get("last_contact_date"),
                 status=str(row.get("status") or "open"),
@@ -258,25 +313,96 @@ class CollectionAgent:
         return {"assisted_records": assisted}
 
     def _generate_recommendations(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
-        recs = [
-            asdict(Recommendation(
-                record_id=r["record_id"], debtor=r["debtor"], address=r["address"], region=r["region"],
-                collector=r["collector"], debt_amount=r["debt_amount"], recommended_action=r["rule_action"],
-                priority=r["priority"], explanation=r["explanation"],
-                estimated_success_probability=r["success_probability"],
-            ))
-            for r in artifacts.get("assisted_records", [])
-        ]
+        recs = []
+        for record in artifacts.get("assisted_records", []):
+            municipal_action = self._municipal_action(record)
+            recommendation = asdict(
+                Recommendation(
+                    record_id=record["record_id"],
+                    debtor=record["debtor"],
+                    address=record["address"],
+                    region=record["region"],
+                    collector=record["collector"],
+                    debt_amount=record["debt_amount"],
+                    recommended_action=municipal_action,
+                    priority=record["priority"],
+                    explanation=record["explanation"],
+                    estimated_success_probability=record["success_probability"],
+                )
+            )
+            recommendation["priority_score"] = record["score"]
+            recommendation["zone"] = self._district_from_record(record)
+            recs.append(recommendation)
         state.recommendations_generated = len(recs)
         return {"recommendations": recs}
 
     def _generate_work_queue(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
-        queues: dict[str, list[dict[str, Any]]] = {}
+        queues: dict[str, list[dict[str, Any]]] = {action: [] for action in MUNICIPAL_ACTION_QUEUES}
         rank = {"high": 0, "medium": 1, "low": 2}
-        for rec in sorted(artifacts.get("recommendations", []), key=lambda r: (rank[r["priority"]], -r["debt_amount"])):
-            queues.setdefault(rec["collector"], []).append(rec)
+        for rec in sorted(
+            artifacts.get("recommendations", []),
+            key=lambda r: (rank[r["priority"]], -r["debt_amount"]),
+        ):
+            queues[rec["recommended_action"]].append(rec)
+        for action, filename in MUNICIPAL_ACTION_QUEUES.items():
+            self._write_json(state.run_id, filename, queues[action])
         self._write_json(state.run_id, "collector_work_queues.json", queues)
-        return {"work_queues": queues}
+        dashboard = self._manager_assignment_dashboard(queues)
+        self._write_json(state.run_id, "manager_dashboard.json", dashboard)
+        return {"work_queues": queues, "manager_dashboard": dashboard}
+
+    def _generate_daily_snapshot(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
+        rules = self._load_json_config(
+            "snapshot_comparison_rules.json", DEFAULT_SNAPSHOT_COMPARISON_RULES
+        )
+        performance_rules = self._load_json_config(
+            "collector_performance_rules.json", DEFAULT_COLLECTOR_PERFORMANCE_RULES
+        )
+        recommendations = {rec["record_id"]: rec for rec in artifacts.get("recommendations", [])}
+        snapshot = [
+            self._snapshot_record(record, recommendations.get(record["record_id"]), state.run_id)
+            for record in artifacts.get("scored_records", [])
+        ]
+        previous_snapshot, previous_run_id = self._previous_snapshot(state.run_id)
+        change_report = self._daily_change_report(snapshot, previous_snapshot, rules, previous_run_id)
+        performance_report = self._collector_performance_report(
+            snapshot, previous_snapshot, performance_rules
+        )
+        alerts = self._collector_alerts(performance_report, snapshot, performance_rules)
+        monitoring_dashboard = self._manager_daily_monitoring_dashboard(
+            snapshot,
+            previous_snapshot,
+            change_report,
+            performance_report,
+            alerts,
+            imported_count=len(artifacts.get("raw_rows", [])),
+            valid_count=state.processed_debt_records,
+        )
+        summary = {
+            "date": date.today().isoformat(),
+            "run_id": state.run_id,
+            "snapshot_count": len(snapshot),
+            "previous_run_id": previous_run_id,
+            "total_debt": round(sum(record["debt_amount"] for record in snapshot), 2),
+            "queue_counts": self._count_by(snapshot, "last_action_queue"),
+            "recommendation_only": True,
+        }
+        self._write_json(state.run_id, "daily_snapshot.json", snapshot)
+        self._write_json(state.run_id, "snapshot_summary.json", summary)
+        self._write_json(state.run_id, "daily_change_report.json", change_report)
+        self._write_json(state.run_id, "collector_performance_report.json", performance_report)
+        self._write_json(state.run_id, "collector_alerts.json", alerts)
+        self._write_json(
+            state.run_id, "manager_daily_monitoring_dashboard.json", monitoring_dashboard
+        )
+        return {
+            "daily_snapshot": snapshot,
+            "snapshot_summary": summary,
+            "daily_change_report": change_report,
+            "collector_performance_report": performance_report,
+            "collector_alerts": alerts,
+            "manager_daily_monitoring_dashboard": monitoring_dashboard,
+        }
 
     def _generate_manager_briefing(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
         recs = artifacts.get("recommendations", [])
@@ -287,7 +413,7 @@ class CollectionAgent:
             "today_total_target": total,
             "total_collectible_amount": forecast,
             "top_priority_cases": [r for r in recs if r["priority"] == "high"][:10],
-            "overdue_follow_ups": [r for r in recs if r["recommended_action"] == "field visit"],
+            "overdue_follow_ups": [r for r in recs if r["recommended_action"] == "FIELD_VISIT"],
             "region_comparison": self._sum_by(recs, "region"),
             "collector_comparison": self._sum_by(recs, "collector"),
             "expected_collection_forecast": forecast,
@@ -510,7 +636,341 @@ class CollectionAgent:
 
     @staticmethod
     def _normalize_key(key: Any) -> str:
-        return str(key).strip().lower().replace(" ", "_").replace("-", "_")
+        normalized = (
+            str(key)
+            .strip()
+            .lower()
+            .replace("ي", "ی")
+            .replace("ك", "ک")
+            .replace(" ", "_")
+            .replace("-", "_")
+            .replace("\n", "_")
+        )
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized.strip("_")
+
+    @staticmethod
+    def _apply_schema_mapping(row: dict[str, Any]) -> None:
+        for target, aliases in REGION_1_SCHEMA_ALIASES.items():
+            if row.get(target):
+                continue
+            for alias in aliases:
+                value = row.get(alias)
+                if value not in (None, ""):
+                    row[target] = value
+                    break
+
+    @staticmethod
+    def _municipal_action(record: dict[str, Any]) -> str:
+        status = str(record.get("status", "")).lower()
+        if status in {"closed", "paid", "resolved", "ignore"}:
+            return "IGNORE"
+        if status in {"follow_up", "follow-up", "follow up"}:
+            return "FOLLOW_UP"
+        if status in {"legal", "legal_review", "legal review"}:
+            return "LEGAL"
+        if record.get("priority") == "high":
+            return "FIELD_VISIT"
+        if record.get("priority") == "medium":
+            return "CALL"
+        return "NOTICE"
+
+    def _manager_assignment_dashboard(self, queues: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+        records = [record for queue in queues.values() for record in queue]
+        return {
+            "date": date.today().isoformat(),
+            "recommendation_only": True,
+            "queue_counts": {action: len(queue) for action, queue in queues.items()},
+            "generated_outputs": MUNICIPAL_ACTION_QUEUES,
+            "summaries": {
+                "by_region": self._queue_summary(records, "region"),
+                "by_zone": self._queue_summary(records, "zone"),
+                "by_collector": self._queue_summary(records, "collector"),
+                "by_priority_score": self._queue_summary(records, "priority_score"),
+            },
+            "unassigned_records": [
+                record for record in records if not record.get("recommended_action")
+            ],
+            "review_notes": [
+                "Recommendation-only queues generated; no messages or actions were sent."
+            ],
+        }
+
+    @staticmethod
+    def _queue_summary(records: list[dict[str, Any]], field_name: str) -> dict[str, dict[str, Any]]:
+        summary: dict[str, dict[str, Any]] = {}
+        for record in records:
+            key = str(record.get(field_name) or "Unassigned")
+            bucket = summary.setdefault(
+                key,
+                {
+                    "case_count": 0,
+                    "debt_amount": 0.0,
+                    "queues": {action: 0 for action in MUNICIPAL_ACTION_QUEUES},
+                },
+            )
+            bucket["case_count"] += 1
+            bucket["debt_amount"] = round(
+                bucket["debt_amount"] + record.get("debt_amount", 0), 2
+            )
+            bucket["queues"][record["recommended_action"]] += 1
+        return summary
+
+    def _snapshot_record(
+        self, record: dict[str, Any], recommendation: dict[str, Any] | None, run_id: str
+    ) -> dict[str, Any]:
+        return {
+            "debtor_id": record["debtor_id"],
+            "debtor_name": record["debtor"],
+            "address": record["address"],
+            "mobile": record.get("mobile"),
+            "debt_amount": record["debt_amount"],
+            "region": record.get("region") or "Unassigned",
+            "zone": record.get("zone") or record.get("region") or "Unassigned",
+            "business_category": record.get("business_category"),
+            "legal_status": record.get("legal_status") or record.get("status") or "open",
+            "last_action_queue": (recommendation or {}).get("recommended_action", "IGNORE"),
+            "assigned_collector": record.get("collector") or "Unassigned",
+            "priority_score": record.get("score", 0),
+            "source_file_name": record.get("source_file", ""),
+            "import_date": date.today().isoformat(),
+            "run_id": run_id,
+        }
+
+    def _previous_snapshot(self, current_run_id: str) -> tuple[list[dict[str, Any]], str | None]:
+        candidates: list[tuple[str, str, Path]] = []
+        for run_dir in self.runs_dir.iterdir():
+            if not run_dir.is_dir() or run_dir.name == current_run_id:
+                continue
+            snapshot_path = run_dir / "daily_snapshot.json"
+            state_path = run_dir / "run_state.json"
+            if not snapshot_path.exists():
+                continue
+            start_time = ""
+            if state_path.exists():
+                start_time = json.loads(state_path.read_text()).get("start_time", "")
+            candidates.append((start_time, run_dir.name, snapshot_path))
+        if not candidates:
+            return [], None
+        _, run_id, path = sorted(candidates)[-1]
+        return json.loads(path.read_text()), run_id
+
+    def _daily_change_report(
+        self,
+        snapshot: list[dict[str, Any]],
+        previous_snapshot: list[dict[str, Any]],
+        rules: dict[str, Any],
+        previous_run_id: str | None,
+    ) -> dict[str, Any]:
+        current = {record["debtor_id"]: record for record in snapshot}
+        previous = {record["debtor_id"]: record for record in previous_snapshot}
+        shared_ids = set(current) & set(previous)
+        min_change = float(rules.get("minimum_debt_change", 0))
+        paid_threshold = float(rules.get("paid_debt_threshold", 0))
+        cleared_statuses = {str(status).lower() for status in rules.get("cleared_legal_statuses", [])}
+
+        increased, decreased, unchanged = [], [], []
+        changed_address_or_mobile, changed_legal_status, changed_action_queue = [], [], []
+        fully_paid_or_cleared = []
+        for debtor_id in sorted(shared_ids):
+            before = previous[debtor_id]
+            after = current[debtor_id]
+            delta = round(after["debt_amount"] - before["debt_amount"], 2)
+            if delta > min_change:
+                increased.append({"debtor_id": debtor_id, "before": before, "after": after, "delta": delta})
+            elif delta < -min_change:
+                decreased.append({"debtor_id": debtor_id, "before": before, "after": after, "delta": delta})
+            else:
+                unchanged.append({"debtor_id": debtor_id, "record": after})
+            if before.get("address") != after.get("address") or before.get("mobile") != after.get("mobile"):
+                changed_address_or_mobile.append({"debtor_id": debtor_id, "before": before, "after": after})
+            if before.get("legal_status") != after.get("legal_status"):
+                changed_legal_status.append({"debtor_id": debtor_id, "before": before, "after": after})
+            if before.get("last_action_queue") != after.get("last_action_queue"):
+                changed_action_queue.append({"debtor_id": debtor_id, "before": before, "after": after})
+            if after["debt_amount"] <= paid_threshold or str(after.get("legal_status", "")).lower() in cleared_statuses:
+                fully_paid_or_cleared.append(after)
+
+        removed = [previous[debtor_id] for debtor_id in sorted(set(previous) - set(current))]
+        return {
+            "date": date.today().isoformat(),
+            "previous_run_id": previous_run_id,
+            "recommendation_only": True,
+            "new_debtors": [current[debtor_id] for debtor_id in sorted(set(current) - set(previous))],
+            "removed_debtors": removed,
+            "debt_amount_increased": increased,
+            "debt_amount_decreased": decreased,
+            "fully_paid_or_cleared_debtors": fully_paid_or_cleared,
+            "unchanged_debtors": unchanged,
+            "changed_address_or_mobile": changed_address_or_mobile,
+            "changed_legal_status": changed_legal_status,
+            "changed_action_queue": changed_action_queue,
+            "queue_count_changes": self._queue_count_changes(snapshot, previous_snapshot),
+        }
+
+    def _collector_performance_report(
+        self,
+        snapshot: list[dict[str, Any]],
+        previous_snapshot: list[dict[str, Any]],
+        rules: dict[str, Any],
+    ) -> dict[str, Any]:
+        current = {record["debtor_id"]: record for record in snapshot}
+        rows: dict[str, dict[str, Any]] = {}
+        for before in previous_snapshot:
+            collector = before.get("assigned_collector") or "Unassigned"
+            row = rows.setdefault(collector, self._empty_collector_performance(collector))
+            row["assigned_case_count"] += 1
+            after = current.get(before["debtor_id"])
+            if after is None:
+                row["paid_or_cleared_cases"] += 1
+                row["cases_improved"] += 1
+                row["debt_reduced_amount"] = round(row["debt_reduced_amount"] + before["debt_amount"], 2)
+                continue
+            delta = round(after["debt_amount"] - before["debt_amount"], 2)
+            action = before.get("last_action_queue", "IGNORE")
+            if delta < 0:
+                row["cases_improved"] += 1
+                row["debt_reduced_amount"] = round(row["debt_reduced_amount"] + abs(delta), 2)
+                self._increment_impact(row, action)
+            elif delta > 0:
+                row["cases_worsened"] += 1
+                row["debt_increased_amount"] = round(row["debt_increased_amount"] + delta, 2)
+            else:
+                row["cases_unchanged"] += 1
+                if action in {"FOLLOW_UP", "FIELD_VISIT", "NOTICE", "CALL"}:
+                    row["follow_up_overdue_cases"] += 1
+        for row in rows.values():
+            row["performance_score"] = self._performance_score(row, rules)
+        ranking = sorted(rows.values(), key=lambda row: row["performance_score"], reverse=True)
+        return {"date": date.today().isoformat(), "recommendation_only": True, "collectors": ranking}
+
+    def _collector_alerts(
+        self, performance_report: dict[str, Any], snapshot: list[dict[str, Any]], rules: dict[str, Any]
+    ) -> dict[str, Any]:
+        alerts = []
+        high_priority_score = int(rules.get("high_priority_ignored_score", 80))
+        for row in performance_report.get("collectors", []):
+            assigned = max(row["assigned_case_count"], 1)
+            unchanged_ratio = row["cases_unchanged"] / assigned
+            if row["cases_unchanged"] >= rules.get("unchanged_many_threshold", 10):
+                alerts.append({"collector": row["collector"], "alert": "collector_has_many_unchanged_cases", "evidence": row})
+            if unchanged_ratio >= rules.get("unchanged_ratio_alert", 0.7):
+                alerts.append({"collector": row["collector"], "alert": "reported_work_without_debt_change", "evidence": row})
+            if row["field_visit_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get("repeated_visit_no_progress_threshold", 2):
+                alerts.append({"collector": row["collector"], "alert": "repeated_visits_with_no_progress", "evidence": row})
+            if row["notice_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get("notice_no_payment_threshold", 5):
+                alerts.append({"collector": row["collector"], "alert": "notices_issued_no_payment_movement", "evidence": row})
+        ignored = [
+            record for record in snapshot
+            if record.get("priority_score", 0) >= high_priority_score and record.get("last_action_queue") == "IGNORE"
+        ]
+        if ignored:
+            alerts.append({"collector": "Unassigned", "alert": "high_priority_cases_ignored", "evidence": ignored})
+        return {"date": date.today().isoformat(), "recommendation_only": True, "alerts": alerts}
+
+    def _manager_daily_monitoring_dashboard(
+        self,
+        snapshot: list[dict[str, Any]],
+        previous_snapshot: list[dict[str, Any]],
+        change_report: dict[str, Any],
+        performance_report: dict[str, Any],
+        alerts: dict[str, Any],
+        imported_count: int,
+        valid_count: int,
+    ) -> dict[str, Any]:
+        yesterday_debt = round(sum(record["debt_amount"] for record in previous_snapshot), 2)
+        today_debt = round(sum(record["debt_amount"] for record in snapshot), 2)
+        worsened = change_report["debt_amount_increased"]
+        improved = change_report["debt_amount_decreased"]
+        return {
+            "date": date.today().isoformat(),
+            "recommendation_only": True,
+            "total_imported_records_today": imported_count,
+            "total_valid_records": valid_count,
+            "total_new_debtors": len(change_report["new_debtors"]),
+            "total_removed_or_paid_debtors": len(change_report["removed_debtors"]) + len(change_report["fully_paid_or_cleared_debtors"]),
+            "total_debt_yesterday": yesterday_debt,
+            "total_debt_today": today_debt,
+            "net_debt_change": round(today_debt - yesterday_debt, 2),
+            "queue_count_changes": change_report["queue_count_changes"],
+            "collector_ranking": performance_report.get("collectors", []),
+            "worst_collector_risks": alerts.get("alerts", [])[:10],
+            "top_improved_cases": sorted(improved, key=lambda item: item["delta"])[:10],
+            "top_worsened_cases": sorted(worsened, key=lambda item: item["delta"], reverse=True)[:10],
+            "recommended_manager_actions": self._monitoring_manager_actions(change_report, alerts),
+        }
+
+    @staticmethod
+    def _empty_collector_performance(collector: str) -> dict[str, Any]:
+        return {
+            "collector": collector,
+            "assigned_case_count": 0,
+            "cases_improved": 0,
+            "cases_unchanged": 0,
+            "cases_worsened": 0,
+            "debt_reduced_amount": 0.0,
+            "debt_increased_amount": 0.0,
+            "paid_or_cleared_cases": 0,
+            "follow_up_overdue_cases": 0,
+            "field_visit_impact": 0,
+            "notice_impact": 0,
+            "call_impact": 0,
+            "performance_score": 0,
+        }
+
+    @staticmethod
+    def _increment_impact(row: dict[str, Any], action: str) -> None:
+        if action == "FIELD_VISIT":
+            row["field_visit_impact"] += 1
+        elif action == "NOTICE":
+            row["notice_impact"] += 1
+        elif action == "CALL":
+            row["call_impact"] += 1
+
+    @staticmethod
+    def _performance_score(row: dict[str, Any], rules: dict[str, Any]) -> int:
+        weights = rules.get("score_weights", {})
+        score = float(weights.get("base", 70))
+        score += row["cases_improved"] * float(weights.get("improved", 8))
+        score += row["paid_or_cleared_cases"] * float(weights.get("paid", 10))
+        score += row["cases_worsened"] * float(weights.get("worsened", -12))
+        score += row["cases_unchanged"] * float(weights.get("unchanged", -2))
+        score += row["follow_up_overdue_cases"] * float(weights.get("overdue", -5))
+        return int(max(0, min(100, round(score))))
+
+    @staticmethod
+    def _queue_count_changes(
+        snapshot: list[dict[str, Any]], previous_snapshot: list[dict[str, Any]]
+    ) -> dict[str, dict[str, int]]:
+        today = CollectionAgent._count_by(snapshot, "last_action_queue")
+        yesterday = CollectionAgent._count_by(previous_snapshot, "last_action_queue")
+        return {
+            action: {
+                "yesterday": yesterday.get(action, 0),
+                "today": today.get(action, 0),
+                "delta": today.get(action, 0) - yesterday.get(action, 0),
+            }
+            for action in MUNICIPAL_ACTION_QUEUES
+        }
+
+    @staticmethod
+    def _monitoring_manager_actions(change_report: dict[str, Any], alerts: dict[str, Any]) -> list[str]:
+        actions = ["Review daily snapshot deltas before approving enforcement work."]
+        if change_report["debt_amount_increased"]:
+            actions.append("Audit the largest debt increases and confirm balances against source files.")
+        if alerts.get("alerts"):
+            actions.append("Review collector alerts and require evidence for no-progress cases.")
+        if change_report["new_debtors"]:
+            actions.append("Assign new debtors to the appropriate recommendation-only action queues.")
+        return actions
+
+    def _load_json_config(self, filename: str, defaults: dict[str, Any]) -> dict[str, Any]:
+        path = Path("config") / filename
+        rules = json.loads(json.dumps(defaults))
+        if path.exists():
+            rules.update(json.loads(path.read_text()))
+        return rules
 
     @staticmethod
     def _clean_value(value: Any) -> Any:
@@ -526,6 +986,28 @@ class CollectionAgent:
     def _record_id(row: dict[str, Any]) -> str:
         basis = f"{row.get('debtor')}|{row.get('address')}|{row.get('debt_amount')}|{row.get('source_file')}|{row.get('row_number')}"
         return hashlib.sha256(basis.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _debtor_id(row: dict[str, Any]) -> str:
+        explicit_id = row.get("debtor_id")
+        if explicit_id not in (None, ""):
+            if str(row.get("source_file", "")).lower().endswith(".xlsx"):
+                basis = (
+                    f"{explicit_id}|{row.get('debtor')}|{row.get('source_file')}|"
+                    f"{row.get('row_number')}"
+                )
+                return hashlib.sha256(basis.encode()).hexdigest()[:16]
+            return str(explicit_id)
+        basis = f"{row.get('debtor')}|{row.get('mobile')}|{row.get('address')}"
+        return hashlib.sha256(basis.encode()).hexdigest()[:16]
+
+    @staticmethod
+    def _count_by(records: list[dict[str, Any]], field_name: str) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for record in records:
+            key = str(record.get(field_name) or "Unassigned")
+            counts[key] = counts.get(key, 0) + 1
+        return counts
 
     @staticmethod
     def _sha256(path: Path) -> str:
