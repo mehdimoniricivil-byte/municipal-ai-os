@@ -1,0 +1,5 @@
+{
+  "paid_debt_threshold": 0,
+  "minimum_debt_change": 0,
+  "cleared_legal_statuses": ["paid", "cleared", "closed", "resolved"]
+}
