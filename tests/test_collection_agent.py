@@ -352,16 +352,25 @@ def test_prevents_duplicate_runs_with_lock(tmp_path):
         agent.run()
 
 
-def test_collection_workflow_preserves_snapshot_financial_and_field_steps():
+def test_collection_workflow_preserves_all_current_steps_in_order():
     from municipal_ai_os.collection_agent import WORKFLOW_STEPS
 
-    assert "generate_daily_snapshot" in WORKFLOW_STEPS
-    assert "generate_executive_intelligence" in WORKFLOW_STEPS
-    assert "generate_field_activity_attribution" in WORKFLOW_STEPS
-    assert "generate_financial_intelligence" in WORKFLOW_STEPS
-    assert WORKFLOW_STEPS.index("generate_field_activity_attribution") < WORKFLOW_STEPS.index(
-        "generate_financial_intelligence"
-    )
+    assert WORKFLOW_STEPS == [
+        "detect_files",
+        "import_data",
+        "clean_data",
+        "validate_records",
+        "detect_duplicates",
+        "apply_rules",
+        "run_ai_assistant",
+        "generate_recommendations",
+        "generate_work_queue",
+        "generate_daily_snapshot",
+        "generate_manager_briefing",
+        "generate_executive_intelligence",
+        "generate_field_activity_attribution",
+        "generate_financial_intelligence",
+    ]
 
 
 def test_collection_agent_source_has_no_merge_conflict_markers():
