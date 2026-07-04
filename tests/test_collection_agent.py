@@ -362,3 +362,15 @@ def test_collection_workflow_preserves_snapshot_financial_and_field_steps():
     assert WORKFLOW_STEPS.index("generate_field_activity_attribution") < WORKFLOW_STEPS.index(
         "generate_financial_intelligence"
     )
+
+
+def test_collection_agent_source_has_no_merge_conflict_markers():
+    source = Path("src/municipal_ai_os/collection_agent.py").read_text()
+
+    assert "<<<<<<<" not in source
+    assert "=======" not in source
+    assert ">>>>>>>" not in source
+    assert "generate_field_activity_attribution" in source
+    assert "generate_financial_intelligence" in source
+    assert "generate_executive_intelligence" in source
+    assert "generate_daily_snapshot" in source
