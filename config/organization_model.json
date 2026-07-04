@@ -1,0 +1,29 @@
+{
+  "municipalities": [
+    {
+      "id": "mun-001",
+      "name": "Default Municipality",
+      "regions": [
+        {
+          "id": "region-1",
+          "name": "Region 1",
+          "zones": [
+            {"id": "zone-1", "name": "Zone 1"}
+          ]
+        }
+      ]
+    }
+  ],
+  "staff_roles": [
+    "collector",
+    "senior_collector",
+    "field_collector",
+    "supervisor",
+    "manager",
+    "analyst",
+    "support"
+  ],
+  "employment_types": ["full_time", "part_time", "contractor", "temporary"],
+  "cost_centers": ["Region 1 Collections"],
+  "staff_members": []
+}
