@@ -1,0 +1,47 @@
+{
+  "debt_amount_thresholds": {
+    "critical": 50000000,
+    "high": 5000000,
+    "medium": 1000000
+  },
+  "debt_age_thresholds_days": {
+    "critical": 365,
+    "high": 180,
+    "medium": 60
+  },
+  "notice_escalation": {
+    "first_notice_when_previous_notice_count": 0,
+    "notice_24h_after_count": 1,
+    "notice_48h_after_count": 2,
+    "notice_72h_after_count": 3,
+    "seal_warning_after_count": 4
+  },
+  "call_escalation": {
+    "max_previous_call_count_for_staff_call": 2
+  },
+  "field_visit_escalation": {
+    "max_previous_field_visit_count_before_manager_review": 3
+  },
+  "priority_deadlines_hours": {
+    "CRITICAL": 24,
+    "HIGH": 48,
+    "MEDIUM": 72,
+    "LOW": 168
+  },
+  "legal_status_actions": {
+    "commission_77": "COMMISSION_77_REFERRAL",
+    "commission 77": "COMMISSION_77_REFERRAL",
+    "legal": "LEGAL_REVIEW",
+    "legal_review": "LEGAL_REVIEW",
+    "execution": "EXECUTION_REGISTRATION"
+  },
+  "payment_status_closed": ["paid", "cleared", "closed", "resolved"],
+  "business_property_type_rules": {
+    "high_risk_types": ["commercial", "business", "retail", "صنفی", "تجاری"]
+  },
+  "duplicate_risk_action": "MANAGER_REVIEW",
+  "broken_promise_action": "FIELD_VISIT",
+  "previous_promise_action": "STAFF_CALL",
+  "default_action": "LOW_PRIORITY_MONITORING",
+  "recommendation_only": true
+}

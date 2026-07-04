@@ -96,7 +96,14 @@ def test_agent_generates_work_queues_and_briefing(tmp_path):
     assert set(queues) == {"CALL", "FIELD_VISIT", "NOTICE", "LEGAL", "FOLLOW_UP", "IGNORE"}
     queued_tasks = [task for queue in queues.values() for task in queue]
     jane_task = next(task for task in queued_tasks if task["debtor"] == "Jane Doe")
-    assert jane_task["recommended_action"] in {"CALL", "FIELD_VISIT", "NOTICE", "LEGAL", "FOLLOW_UP", "IGNORE"}
+    assert jane_task["recommended_action"] in {
+        "CALL",
+        "FIELD_VISIT",
+        "NOTICE",
+        "LEGAL",
+        "FOLLOW_UP",
+        "IGNORE",
+    }
     assert "estimated_success_probability" in jane_task
     assert (run_dir / "daily_call_queue.json").exists()
     assert (run_dir / "daily_visit_queue.json").exists()
@@ -296,7 +303,9 @@ def test_snapshot_change_performance_alerts_and_monitoring_dashboard(tmp_path):
     assert [record["debtor_id"] for record in change_report["removed_debtors"]] == ["C"]
     assert [item["debtor_id"] for item in change_report["debt_amount_decreased"]] == ["A"]
     assert [item["debtor_id"] for item in change_report["debt_amount_increased"]] == ["B"]
-    assert [record["debtor_id"] for record in change_report["fully_paid_or_cleared_debtors"]] == ["D"]
+    assert [record["debtor_id"] for record in change_report["fully_paid_or_cleared_debtors"]] == [
+        "D"
+    ]
     assert [item["debtor_id"] for item in change_report["changed_address_or_mobile"]] == ["A"]
 
     performance = json.loads((second_run / "collector_performance_report.json").read_text())
@@ -341,3 +350,38 @@ def test_prevents_duplicate_runs_with_lock(tmp_path):
 
     with pytest.raises(DuplicateRunError):
         agent.run()
+
+
+def test_collection_workflow_preserves_all_current_steps_in_order():
+    from municipal_ai_os.collection_agent import WORKFLOW_STEPS
+
+    assert WORKFLOW_STEPS == [
+        "detect_files",
+        "import_data",
+        "clean_data",
+        "validate_records",
+        "detect_duplicates",
+        "apply_rules",
+        "run_ai_assistant",
+        "generate_recommendations",
+        "generate_work_queue",
+        "generate_municipal_missions",
+        "generate_daily_snapshot",
+        "generate_manager_briefing",
+        "generate_executive_intelligence",
+        "generate_field_activity_attribution",
+        "generate_financial_intelligence",
+    ]
+
+
+def test_collection_agent_source_has_no_merge_conflict_markers():
+    source = Path("src/municipal_ai_os/collection_agent.py").read_text()
+
+    assert "<<<<<<<" not in source
+    assert "=======" not in source
+    assert ">>>>>>>" not in source
+    assert "generate_municipal_missions" in source
+    assert "generate_field_activity_attribution" in source
+    assert "generate_financial_intelligence" in source
+    assert "generate_executive_intelligence" in source
+    assert "generate_daily_snapshot" in source

@@ -22,6 +22,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from municipal_ai_os.field_activity_attribution import FieldActivityAttributionEngine
+from municipal_ai_os.financial_intelligence import FinancialIntelligenceDashboard
+from municipal_ai_os.municipal_mission_engine import MunicipalMissionEngine
+
 
 WORKFLOW_STEPS = [
     "detect_files",
@@ -33,9 +37,12 @@ WORKFLOW_STEPS = [
     "run_ai_assistant",
     "generate_recommendations",
     "generate_work_queue",
+    "generate_municipal_missions",
     "generate_daily_snapshot",
     "generate_manager_briefing",
     "generate_executive_intelligence",
+    "generate_field_activity_attribution",
+    "generate_financial_intelligence",
 ]
 
 REGION_1_SCHEMA_ALIASES = {
@@ -150,7 +157,13 @@ class CollectionAgent:
         self.state_dir = self.workspace / "state"
         self.audit_dir = self.workspace / "audit"
         self.lock_path = self.state_dir / "agent.lock"
-        for directory in [self.inbox_dir, self.archive_dir, self.runs_dir, self.state_dir, self.audit_dir]:
+        for directory in [
+            self.inbox_dir,
+            self.archive_dir,
+            self.runs_dir,
+            self.state_dir,
+            self.audit_dir,
+        ]:
             directory.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
@@ -160,7 +173,9 @@ class CollectionAgent:
             os.write(fd, str(os.getpid()).encode())
             os.close(fd)
         except FileExistsError as exc:
-            raise DuplicateRunError(f"Collection agent is already running: {self.lock_path}") from exc
+            raise DuplicateRunError(
+                f"Collection agent is already running: {self.lock_path}"
+            ) from exc
         try:
             yield
         finally:
@@ -206,7 +221,9 @@ class CollectionAgent:
                 raise FileNotFoundError(f"Run state not found for {resume_run_id}")
             return RunState(**json.loads(state_file.read_text()))
         run_id = f"{date.today().isoformat()}-{uuid.uuid4().hex[:8]}"
-        state = RunState(run_id=run_id, mode=mode, start_time=datetime.now(timezone.utc).isoformat())
+        state = RunState(
+            run_id=run_id, mode=mode, start_time=datetime.now(timezone.utc).isoformat()
+        )
         self._save_state(state)
         self._audit(run_id, "run_started", asdict(state))
         return state
@@ -251,7 +268,9 @@ class CollectionAgent:
             if row.get("debt_amount", 0) <= 0:
                 warnings.append("debt_amount must be positive")
             if warnings:
-                state.warnings.append(f"{row.get('source_file')}:{row.get('row_number')} {', '.join(warnings)}")
+                state.warnings.append(
+                    f"{row.get('source_file')}:{row.get('row_number')} {', '.join(warnings)}"
+                )
                 continue
             record = DebtRecord(
                 record_id=self._record_id(row),
@@ -263,7 +282,9 @@ class CollectionAgent:
                 zone=str(row.get("zone") or row.get("region") or "Unassigned"),
                 collector=str(row.get("collector") or "Unassigned"),
                 debt_amount=float(row["debt_amount"]),
-                business_category=str(row["business_category"]) if row.get("business_category") else None,
+                business_category=str(row["business_category"])
+                if row.get("business_category")
+                else None,
                 legal_status=str(row["legal_status"]) if row.get("legal_status") else None,
                 due_date=row.get("due_date"),
                 last_contact_date=row.get("last_contact_date"),
@@ -295,24 +316,42 @@ class CollectionAgent:
             amount = record["debt_amount"]
             days_overdue = self._days_since(record.get("due_date"), today)
             no_contact_days = self._days_since(record.get("last_contact_date"), today)
-            score = min(100, int(amount / 100) + max(days_overdue, 0) + max(no_contact_days // 3, 0))
+            score = min(
+                100, int(amount / 100) + max(days_overdue, 0) + max(no_contact_days // 3, 0)
+            )
             priority = "high" if score >= 80 else "medium" if score >= 40 else "low"
-            action = "field visit" if priority == "high" else "phone call" if priority == "medium" else "courtesy reminder"
+            action = (
+                "field visit"
+                if priority == "high"
+                else "phone call"
+                if priority == "medium"
+                else "courtesy reminder"
+            )
             scored.append({**record, "score": score, "priority": priority, "rule_action": action})
         return {"scored_records": scored}
 
     def _run_ai_assistant(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
         assisted = []
         for record in artifacts.get("scored_records", []):
-            probability = max(0.1, min(0.95, 0.72 - (record["score"] / 300) + (0.08 if record["debt_amount"] < 500 else 0)))
+            probability = max(
+                0.1,
+                min(
+                    0.95,
+                    0.72 - (record["score"] / 300) + (0.08 if record["debt_amount"] < 500 else 0),
+                ),
+            )
             explanation = (
                 f"{record['priority'].title()} priority based on amount ${record['debt_amount']:.2f}, "
                 f"overdue age, and recent contact history. Recommended {record['rule_action']}."
             )
-            assisted.append({**record, "success_probability": round(probability, 2), "explanation": explanation})
+            assisted.append(
+                {**record, "success_probability": round(probability, 2), "explanation": explanation}
+            )
         return {"assisted_records": assisted}
 
-    def _generate_recommendations(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
+    def _generate_recommendations(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
         recs = []
         for record in artifacts.get("assisted_records", []):
             municipal_action = self._municipal_action(record)
@@ -351,7 +390,34 @@ class CollectionAgent:
         self._write_json(state.run_id, "manager_dashboard.json", dashboard)
         return {"work_queues": queues, "manager_dashboard": dashboard}
 
-    def _generate_daily_snapshot(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
+    def _generate_municipal_missions(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
+        missions = MunicipalMissionEngine(self.workspace).build(
+            run_id=state.run_id,
+            records=artifacts.get("scored_records", []),
+        )
+        for filename in [
+            "municipal_mission_list.json",
+            "daily_staff_call_missions.json",
+            "daily_field_visit_missions.json",
+            "daily_notice_missions.json",
+            "daily_legal_missions.json",
+            "daily_manager_review_missions.json",
+            "municipal_mission_summary.json",
+        ]:
+            key = filename.removesuffix(".json")
+            self._write_json(state.run_id, filename, missions[key])
+        run_dir = self.runs_dir / state.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "human_readable_manager_report.md").write_text(
+            missions["human_readable_manager_report"]
+        )
+        return {"municipal_missions": missions}
+
+    def _generate_daily_snapshot(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
         rules = self._load_json_config(
             "snapshot_comparison_rules.json", DEFAULT_SNAPSHOT_COMPARISON_RULES
         )
@@ -364,7 +430,9 @@ class CollectionAgent:
             for record in artifacts.get("scored_records", [])
         ]
         previous_snapshot, previous_run_id = self._previous_snapshot(state.run_id)
-        change_report = self._daily_change_report(snapshot, previous_snapshot, rules, previous_run_id)
+        change_report = self._daily_change_report(
+            snapshot, previous_snapshot, rules, previous_run_id
+        )
         performance_report = self._collector_performance_report(
             snapshot, previous_snapshot, performance_rules
         )
@@ -404,10 +472,14 @@ class CollectionAgent:
             "manager_daily_monitoring_dashboard": monitoring_dashboard,
         }
 
-    def _generate_manager_briefing(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
+    def _generate_manager_briefing(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
         recs = artifacts.get("recommendations", [])
         total = round(sum(r["debt_amount"] for r in recs), 2)
-        forecast = round(sum(r["debt_amount"] * r["estimated_success_probability"] for r in recs), 2)
+        forecast = round(
+            sum(r["debt_amount"] * r["estimated_success_probability"] for r in recs), 2
+        )
         briefing = {
             "date": date.today().isoformat(),
             "today_total_target": total,
@@ -423,15 +495,18 @@ class CollectionAgent:
         self._mark_seen(artifacts.get("files", []))
         return {"manager_briefing": briefing}
 
-
-    def _generate_executive_intelligence(self, state: RunState, artifacts: dict[str, Any]) -> dict[str, Any]:
+    def _generate_executive_intelligence(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
         recs = artifacts.get("recommendations", [])
         scored = artifacts.get("scored_records", [])
         region_stats = self._performance_stats(recs, "region")
         collector_stats = self._performance_stats(recs, "collector")
         district_stats = self._district_stats(scored)
         total_debt = round(sum(r["debt_amount"] for r in recs), 2)
-        expected_revenue = round(sum(r["debt_amount"] * r["estimated_success_probability"] for r in recs), 2)
+        expected_revenue = round(
+            sum(r["debt_amount"] * r["estimated_success_probability"] for r in recs), 2
+        )
         end_of_month_revenue = self._end_of_month_forecast(expected_revenue)
         efficiency = self._collection_efficiency_score(total_debt, expected_revenue, recs)
         health = self._municipality_health_score(efficiency, region_stats, collector_stats, scored)
@@ -446,8 +521,12 @@ class CollectionAgent:
         recommendations.extend(self._commission_77_recommendations(scored))
         recommendations.extend(self._field_campaign_recommendations(district_stats))
         recommendations.extend(self._seasonal_pattern_recommendations(recs))
-        recommendations.extend(self._abnormal_behavior_recommendations(region_stats, collector_stats, scored))
-        recommendations.extend(self._daily_strategic_recommendations(health, efficiency, end_of_month_revenue, recs))
+        recommendations.extend(
+            self._abnormal_behavior_recommendations(region_stats, collector_stats, scored)
+        )
+        recommendations.extend(
+            self._daily_strategic_recommendations(health, efficiency, end_of_month_revenue, recs)
+        )
 
         dashboard = {
             "date": date.today().isoformat(),
@@ -458,13 +537,28 @@ class CollectionAgent:
                 "collection_efficiency_score": efficiency,
                 "municipality_health_score": health,
                 "high_priority_case_count": sum(1 for r in recs if r["priority"] == "high"),
-                "probably_uncollectible_amount": round(sum(r["debt_amount"] for r in recs if r["estimated_success_probability"] <= 0.25), 2),
+                "probably_uncollectible_amount": round(
+                    sum(
+                        r["debt_amount"] for r in recs if r["estimated_success_probability"] <= 0.25
+                    ),
+                    2,
+                ),
                 "executive_recommendation_count": len(recommendations),
             },
-            "weak_performing_regions": [name for name, stat in region_stats.items() if stat["efficiency"] < 45],
-            "weak_performing_collectors": [name for name, stat in collector_stats.items() if stat["efficiency"] < 45],
-            "districts_requiring_field_campaigns": [name for name, stat in district_stats.items() if stat["high_priority_count"] >= 3 or stat["debt_amount"] >= 10000],
-            "daily_strategic_recommendations": [r for r in recommendations if r["category"] == "daily_strategy"],
+            "weak_performing_regions": [
+                name for name, stat in region_stats.items() if stat["efficiency"] < 45
+            ],
+            "weak_performing_collectors": [
+                name for name, stat in collector_stats.items() if stat["efficiency"] < 45
+            ],
+            "districts_requiring_field_campaigns": [
+                name
+                for name, stat in district_stats.items()
+                if stat["high_priority_count"] >= 3 or stat["debt_amount"] >= 10000
+            ],
+            "daily_strategic_recommendations": [
+                r for r in recommendations if r["category"] == "daily_strategy"
+            ],
         }
         intelligence = {
             "mayor_dashboard": dashboard,
@@ -479,6 +573,49 @@ class CollectionAgent:
         self._store_executive_recommendations(state.run_id, recommendations)
         return {"executive_intelligence": intelligence, "mayor_dashboard": dashboard}
 
+    def _generate_field_activity_attribution(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
+        previous_snapshot, _ = self._previous_snapshot(state.run_id)
+        activities = self._load_field_activity_log()
+        attribution = FieldActivityAttributionEngine(self.workspace).build(
+            run_id=state.run_id,
+            current_records=artifacts.get("daily_snapshot", []),
+            previous_records=previous_snapshot,
+            activities=activities,
+        )
+        for filename in [
+            "field_activity_attribution_report.json",
+            "collector_credit_report.json",
+            "unattributed_collections.json",
+            "field_activity_quality_report.json",
+            "manager_field_performance_dashboard.json",
+        ]:
+            key = filename.removesuffix(".json")
+            self._write_json(state.run_id, filename, attribution[key])
+        return {"field_activity_attribution": attribution}
+
+    def _load_field_activity_log(self) -> list[dict[str, Any]]:
+        path = self.inbox_dir / "field_activity_log.json"
+        if not path.exists():
+            return []
+        payload = json.loads(path.read_text())
+        if isinstance(payload, dict):
+            return list(payload.get("activities", []))
+        return list(payload)
+
+    def _generate_financial_intelligence(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
+        previous_snapshot, _ = self._previous_snapshot(state.run_id)
+        dashboard = FinancialIntelligenceDashboard(self.workspace).build(
+            run_id=state.run_id,
+            current_snapshot=artifacts.get("daily_snapshot", []),
+            previous_snapshot=previous_snapshot,
+        )
+        self._write_json(state.run_id, "financial_intelligence_dashboard.json", dashboard)
+        return {"financial_intelligence_dashboard": dashboard}
+
     def _read_csv(self, path: Path) -> list[dict[str, Any]]:
         with path.open(newline="") as handle:
             return list(csv.DictReader(handle))
@@ -491,7 +628,11 @@ class CollectionAgent:
         if not rows:
             return []
         headers = [str(cell or "") for cell in rows[0]]
-        return [dict(zip(headers, row, strict=False)) for row in rows[1:] if any(cell is not None for cell in row)]
+        return [
+            dict(zip(headers, row, strict=False))
+            for row in rows[1:]
+            if any(cell is not None for cell in row)
+        ]
 
     def _save_state(self, state: RunState) -> None:
         self._write_json(state.run_id, "run_state.json", asdict(state))
@@ -509,7 +650,12 @@ class CollectionAgent:
         (run_dir / name).write_text(json.dumps(data, indent=2, sort_keys=True))
 
     def _audit(self, run_id: str, event: str, details: dict[str, Any]) -> None:
-        entry = {"timestamp": datetime.now(timezone.utc).isoformat(), "run_id": run_id, "event": event, "details": details}
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": run_id,
+            "event": event,
+            "details": details,
+        }
         with (self.audit_dir / f"{date.today().isoformat()}.jsonl").open("a") as handle:
             handle.write(json.dumps(entry, sort_keys=True) + "\n")
 
@@ -522,25 +668,44 @@ class CollectionAgent:
         seen.update(file["sha256"] for file in files)
         (self.state_dir / "seen_files.json").write_text(json.dumps(sorted(seen), indent=2))
 
-
-    def _store_executive_recommendations(self, run_id: str, recommendations: list[dict[str, Any]]) -> None:
+    def _store_executive_recommendations(
+        self, run_id: str, recommendations: list[dict[str, Any]]
+    ) -> None:
         learning_path = self.state_dir / "executive_recommendations.jsonl"
         with learning_path.open("a") as handle:
             for recommendation in recommendations:
-                entry = {"run_id": run_id, "stored_at": datetime.now(timezone.utc).isoformat(), **recommendation}
+                entry = {
+                    "run_id": run_id,
+                    "stored_at": datetime.now(timezone.utc).isoformat(),
+                    **recommendation,
+                }
                 handle.write(json.dumps(entry, sort_keys=True) + "\n")
 
     @staticmethod
-    def _performance_stats(records: list[dict[str, Any]], field_name: str) -> dict[str, dict[str, Any]]:
+    def _performance_stats(
+        records: list[dict[str, Any]], field_name: str
+    ) -> dict[str, dict[str, Any]]:
         stats: dict[str, dict[str, Any]] = {}
         for record in records:
-            bucket = stats.setdefault(record[field_name], {"case_count": 0, "debt_amount": 0.0, "forecast": 0.0, "high_priority_count": 0})
+            bucket = stats.setdefault(
+                record[field_name],
+                {"case_count": 0, "debt_amount": 0.0, "forecast": 0.0, "high_priority_count": 0},
+            )
             bucket["case_count"] += 1
             bucket["debt_amount"] = round(bucket["debt_amount"] + record["debt_amount"], 2)
-            bucket["forecast"] = round(bucket["forecast"] + record["debt_amount"] * record["estimated_success_probability"], 2)
+            bucket["forecast"] = round(
+                bucket["forecast"]
+                + record["debt_amount"] * record["estimated_success_probability"],
+                2,
+            )
             bucket["high_priority_count"] += 1 if record["priority"] == "high" else 0
         for bucket in stats.values():
-            bucket["efficiency"] = round((bucket["forecast"] / bucket["debt_amount"] * 100) if bucket["debt_amount"] else 100, 2)
+            bucket["efficiency"] = round(
+                (bucket["forecast"] / bucket["debt_amount"] * 100)
+                if bucket["debt_amount"]
+                else 100,
+                2,
+            )
         return stats
 
     @staticmethod
@@ -548,7 +713,9 @@ class CollectionAgent:
         stats: dict[str, dict[str, Any]] = {}
         for record in records:
             district = CollectionAgent._district_from_record(record)
-            bucket = stats.setdefault(district, {"case_count": 0, "debt_amount": 0.0, "high_priority_count": 0})
+            bucket = stats.setdefault(
+                district, {"case_count": 0, "debt_amount": 0.0, "high_priority_count": 0}
+            )
             bucket["case_count"] += 1
             bucket["debt_amount"] = round(bucket["debt_amount"] + record["debt_amount"], 2)
             bucket["high_priority_count"] += 1 if record.get("priority") == "high" else 0
@@ -565,23 +732,49 @@ class CollectionAgent:
         return round(expected_revenue / elapsed_ratio, 2)
 
     @staticmethod
-    def _collection_efficiency_score(total_debt: float, expected_revenue: float, records: list[dict[str, Any]]) -> float:
+    def _collection_efficiency_score(
+        total_debt: float, expected_revenue: float, records: list[dict[str, Any]]
+    ) -> float:
         if not records or total_debt <= 0:
             return 100.0
-        high_priority_penalty = sum(1 for r in records if r["priority"] == "high") / len(records) * 15
-        return round(max(0, min(100, (expected_revenue / total_debt * 100) - high_priority_penalty)), 2)
+        high_priority_penalty = (
+            sum(1 for r in records if r["priority"] == "high") / len(records) * 15
+        )
+        return round(
+            max(0, min(100, (expected_revenue / total_debt * 100) - high_priority_penalty)), 2
+        )
 
     @staticmethod
-    def _municipality_health_score(efficiency: float, region_stats: dict[str, dict[str, Any]], collector_stats: dict[str, dict[str, Any]], records: list[dict[str, Any]]) -> float:
+    def _municipality_health_score(
+        efficiency: float,
+        region_stats: dict[str, dict[str, Any]],
+        collector_stats: dict[str, dict[str, Any]],
+        records: list[dict[str, Any]],
+    ) -> float:
         weak_regions = sum(1 for stat in region_stats.values() if stat["efficiency"] < 45)
         weak_collectors = sum(1 for stat in collector_stats.values() if stat["efficiency"] < 45)
         abnormal_penalty = sum(1 for r in records if r.get("debt_amount", 0) >= 25000) * 3
-        return round(max(0, min(100, efficiency - weak_regions * 4 - weak_collectors * 3 - abnormal_penalty)), 2)
+        return round(
+            max(
+                0, min(100, efficiency - weak_regions * 4 - weak_collectors * 3 - abnormal_penalty)
+            ),
+            2,
+        )
 
     @staticmethod
-    def _executive_recommendation(category: str, title: str, severity: str, opportunity: str, action: str, reasoning: str, evidence: dict[str, Any]) -> dict[str, Any]:
+    def _executive_recommendation(
+        category: str,
+        title: str,
+        severity: str,
+        opportunity: str,
+        action: str,
+        reasoning: str,
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
         return {
-            "id": hashlib.sha256(f"{category}|{title}|{json.dumps(evidence, sort_keys=True)}".encode()).hexdigest()[:16],
+            "id": hashlib.sha256(
+                f"{category}|{title}|{json.dumps(evidence, sort_keys=True)}".encode()
+            ).hexdigest()[:16],
             "category": category,
             "title": title,
             "severity": severity,
@@ -591,48 +784,230 @@ class CollectionAgent:
             "evidence": evidence,
         }
 
-    def _weak_region_recommendations(self, stats: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("weak_region", f"Weak-performing region: {name}", "high", "Recover revenue by reallocating field capacity to underperforming geography.", "Review district barriers, add supervisor ride-alongs, and rebalance collector assignments today.", f"AI reasoning: {name} has an efficiency score of {stat['efficiency']} with {stat['high_priority_count']} high-priority cases, indicating the region is converting less debt into expected revenue than the municipal baseline.", {"region": name, **stat}) for name, stat in stats.items() if stat["efficiency"] < 45]
+    def _weak_region_recommendations(
+        self, stats: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "weak_region",
+                f"Weak-performing region: {name}",
+                "high",
+                "Recover revenue by reallocating field capacity to underperforming geography.",
+                "Review district barriers, add supervisor ride-alongs, and rebalance collector assignments today.",
+                f"AI reasoning: {name} has an efficiency score of {stat['efficiency']} with {stat['high_priority_count']} high-priority cases, indicating the region is converting less debt into expected revenue than the municipal baseline.",
+                {"region": name, **stat},
+            )
+            for name, stat in stats.items()
+            if stat["efficiency"] < 45
+        ]
 
-    def _weak_collector_recommendations(self, stats: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("weak_collector", f"Weak-performing collector: {name}", "medium", "Improve team productivity through targeted coaching.", "Audit the collector queue, review contact scripts, and pair with a top performer for the next route.", f"AI reasoning: {name} owns a portfolio with {stat['efficiency']} efficiency and {stat['high_priority_count']} high-priority cases, which suggests intervention may increase near-term collections.", {"collector": name, **stat}) for name, stat in stats.items() if stat["efficiency"] < 45]
+    def _weak_collector_recommendations(
+        self, stats: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "weak_collector",
+                f"Weak-performing collector: {name}",
+                "medium",
+                "Improve team productivity through targeted coaching.",
+                "Audit the collector queue, review contact scripts, and pair with a top performer for the next route.",
+                f"AI reasoning: {name} owns a portfolio with {stat['efficiency']} efficiency and {stat['high_priority_count']} high-priority cases, which suggests intervention may increase near-term collections.",
+                {"collector": name, **stat},
+            )
+            for name, stat in stats.items()
+            if stat["efficiency"] < 45
+        ]
 
-    def _uncollectible_debt_recommendations(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("probably_uncollectible", f"Probably uncollectible debt: {r['debtor']}", "high", "Reduce wasted effort by separating low-probability debt from daily collector routes.", "Move to senior review for write-down, legal escalation, or settlement authority.", f"AI reasoning: Success probability is {r['estimated_success_probability']} while debt is ${r['debt_amount']:.2f}; this combination indicates normal outreach is unlikely to recover the balance.", {"record_id": r["record_id"], "debtor": r["debtor"], "probability": r["estimated_success_probability"], "debt_amount": r["debt_amount"]}) for r in records if r["estimated_success_probability"] <= 0.25]
+    def _uncollectible_debt_recommendations(
+        self, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "probably_uncollectible",
+                f"Probably uncollectible debt: {r['debtor']}",
+                "high",
+                "Reduce wasted effort by separating low-probability debt from daily collector routes.",
+                "Move to senior review for write-down, legal escalation, or settlement authority.",
+                f"AI reasoning: Success probability is {r['estimated_success_probability']} while debt is ${r['debt_amount']:.2f}; this combination indicates normal outreach is unlikely to recover the balance.",
+                {
+                    "record_id": r["record_id"],
+                    "debtor": r["debtor"],
+                    "probability": r["estimated_success_probability"],
+                    "debt_amount": r["debt_amount"],
+                },
+            )
+            for r in records
+            if r["estimated_success_probability"] <= 0.25
+        ]
 
-    def _collector_intervention_recommendations(self, stats: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("collector_intervention", f"Collector intervention required: {name}", "high", "Prevent a portfolio from becoming structurally delinquent.", "Manager should inspect case notes, approve a route plan, and set a same-week recovery target.", f"AI reasoning: {name} combines low efficiency ({stat['efficiency']}) with at least three high-priority cases, a pattern that requires direct management intervention.", {"collector": name, **stat}) for name, stat in stats.items() if stat["efficiency"] < 55 and stat["high_priority_count"] >= 3]
+    def _collector_intervention_recommendations(
+        self, stats: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "collector_intervention",
+                f"Collector intervention required: {name}",
+                "high",
+                "Prevent a portfolio from becoming structurally delinquent.",
+                "Manager should inspect case notes, approve a route plan, and set a same-week recovery target.",
+                f"AI reasoning: {name} combines low efficiency ({stat['efficiency']}) with at least three high-priority cases, a pattern that requires direct management intervention.",
+                {"collector": name, **stat},
+            )
+            for name, stat in stats.items()
+            if stat["efficiency"] < 55 and stat["high_priority_count"] >= 3
+        ]
 
-    def _special_negotiation_recommendations(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("special_negotiation", f"Special negotiation candidate: {r['debtor']}", "medium", "Increase recoveries through structured payment plans before legal costs rise.", "Offer a manager-approved payment plan or settlement window within 48 hours.", f"AI reasoning: The debt is high (${r['debt_amount']:.2f}) but probability remains {r['estimated_success_probability']}, making negotiation more attractive than routine reminders.", {"record_id": r["record_id"], "debtor": r["debtor"], "debt_amount": r["debt_amount"], "probability": r["estimated_success_probability"]}) for r in records if r["debt_amount"] >= 5000 and 0.25 < r["estimated_success_probability"] <= 0.6]
+    def _special_negotiation_recommendations(
+        self, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "special_negotiation",
+                f"Special negotiation candidate: {r['debtor']}",
+                "medium",
+                "Increase recoveries through structured payment plans before legal costs rise.",
+                "Offer a manager-approved payment plan or settlement window within 48 hours.",
+                f"AI reasoning: The debt is high (${r['debt_amount']:.2f}) but probability remains {r['estimated_success_probability']}, making negotiation more attractive than routine reminders.",
+                {
+                    "record_id": r["record_id"],
+                    "debtor": r["debtor"],
+                    "debt_amount": r["debt_amount"],
+                    "probability": r["estimated_success_probability"],
+                },
+            )
+            for r in records
+            if r["debt_amount"] >= 5000 and 0.25 < r["estimated_success_probability"] <= 0.6
+        ]
 
-    def _business_closure_recommendations(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        candidates = [r for r in records if "business" in str(r.get("debtor", "")).lower() or r.get("debt_amount", 0) >= 15000]
-        return [self._executive_recommendation("business_closure_risk", f"Business closure risk: {r['debtor']}", "high", "Protect municipal revenue before the taxpayer exits operations.", "Schedule immediate business outreach and verify operating status through field inspection.", f"AI reasoning: {r['debtor']} has a large balance (${r['debt_amount']:.2f}) and high collection pressure, which can indicate closure or insolvency risk if not addressed quickly.", {"record_id": r["record_id"], "debtor": r["debtor"], "debt_amount": r["debt_amount"], "score": r.get("score")}) for r in candidates if r.get("score", 0) >= 80]
+    def _business_closure_recommendations(
+        self, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        candidates = [
+            r
+            for r in records
+            if "business" in str(r.get("debtor", "")).lower() or r.get("debt_amount", 0) >= 15000
+        ]
+        return [
+            self._executive_recommendation(
+                "business_closure_risk",
+                f"Business closure risk: {r['debtor']}",
+                "high",
+                "Protect municipal revenue before the taxpayer exits operations.",
+                "Schedule immediate business outreach and verify operating status through field inspection.",
+                f"AI reasoning: {r['debtor']} has a large balance (${r['debt_amount']:.2f}) and high collection pressure, which can indicate closure or insolvency risk if not addressed quickly.",
+                {
+                    "record_id": r["record_id"],
+                    "debtor": r["debtor"],
+                    "debt_amount": r["debt_amount"],
+                    "score": r.get("score"),
+                },
+            )
+            for r in candidates
+            if r.get("score", 0) >= 80
+        ]
 
     def _commission_77_recommendations(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("commission_77", f"Move legal case to Commission 77: {r['debtor']}", "critical", "Accelerate legally actionable debts with high municipal exposure.", "Prepare Commission 77 packet immediately and remove from routine queue after manager approval.", f"AI reasoning: The case combines high debt (${r['debt_amount']:.2f}) and maximum urgency score ({r.get('score')}), meeting the immediate escalation threshold.", {"record_id": r["record_id"], "debtor": r["debtor"], "debt_amount": r["debt_amount"], "score": r.get("score")}) for r in records if r.get("score", 0) >= 95 and r["debt_amount"] >= 10000]
+        return [
+            self._executive_recommendation(
+                "commission_77",
+                f"Move legal case to Commission 77: {r['debtor']}",
+                "critical",
+                "Accelerate legally actionable debts with high municipal exposure.",
+                "Prepare Commission 77 packet immediately and remove from routine queue after manager approval.",
+                f"AI reasoning: The case combines high debt (${r['debt_amount']:.2f}) and maximum urgency score ({r.get('score')}), meeting the immediate escalation threshold.",
+                {
+                    "record_id": r["record_id"],
+                    "debtor": r["debtor"],
+                    "debt_amount": r["debt_amount"],
+                    "score": r.get("score"),
+                },
+            )
+            for r in records
+            if r.get("score", 0) >= 95 and r["debt_amount"] >= 10000
+        ]
 
-    def _field_campaign_recommendations(self, stats: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-        return [self._executive_recommendation("field_campaign", f"Field campaign needed in {name}", "high", "Capture concentrated revenue through coordinated field operations.", "Launch a district field campaign with route batching and supervisor review by end of day.", f"AI reasoning: {name} has {stat['high_priority_count']} high-priority cases and ${stat['debt_amount']:.2f} in open debt, indicating geographic concentration.", {"district": name, **stat}) for name, stat in stats.items() if stat["high_priority_count"] >= 3 or stat["debt_amount"] >= 10000]
+    def _field_campaign_recommendations(
+        self, stats: dict[str, dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        return [
+            self._executive_recommendation(
+                "field_campaign",
+                f"Field campaign needed in {name}",
+                "high",
+                "Capture concentrated revenue through coordinated field operations.",
+                "Launch a district field campaign with route batching and supervisor review by end of day.",
+                f"AI reasoning: {name} has {stat['high_priority_count']} high-priority cases and ${stat['debt_amount']:.2f} in open debt, indicating geographic concentration.",
+                {"district": name, **stat},
+            )
+            for name, stat in stats.items()
+            if stat["high_priority_count"] >= 3 or stat["debt_amount"] >= 10000
+        ]
 
-    def _seasonal_pattern_recommendations(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _seasonal_pattern_recommendations(
+        self, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         current_month = date.today().month
         if current_month in {1, 2, 11, 12} and records:
             amount = round(sum(r["debt_amount"] for r in records), 2)
-            return [self._executive_recommendation("seasonal_pattern", "Seasonal collection pressure detected", "medium", "Adjust staffing before seasonal payment behavior reduces cash recovery.", "Increase early-month reminders and prioritize negotiated settlements during the seasonal risk window.", f"AI reasoning: Month {current_month} historically behaves like a seasonal risk window; the current queue contains ${amount:.2f}, so earlier outreach can protect cash flow.", {"month": current_month, "debt_amount": amount, "case_count": len(records)})]
+            return [
+                self._executive_recommendation(
+                    "seasonal_pattern",
+                    "Seasonal collection pressure detected",
+                    "medium",
+                    "Adjust staffing before seasonal payment behavior reduces cash recovery.",
+                    "Increase early-month reminders and prioritize negotiated settlements during the seasonal risk window.",
+                    f"AI reasoning: Month {current_month} historically behaves like a seasonal risk window; the current queue contains ${amount:.2f}, so earlier outreach can protect cash flow.",
+                    {"month": current_month, "debt_amount": amount, "case_count": len(records)},
+                )
+            ]
         return []
 
-    def _abnormal_behavior_recommendations(self, region_stats: dict[str, dict[str, Any]], collector_stats: dict[str, dict[str, Any]], records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _abnormal_behavior_recommendations(
+        self,
+        region_stats: dict[str, dict[str, Any]],
+        collector_stats: dict[str, dict[str, Any]],
+        records: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         recommendations = []
         for record in records:
             if record.get("debt_amount", 0) >= 25000:
-                recommendations.append(self._executive_recommendation("abnormal_behavior", f"Abnormal high-value debt: {record['debtor']}", "critical", "Prevent one outlier from distorting collection performance and risk exposure.", "Assign executive review and verify taxpayer status, balance accuracy, and legal readiness today.", f"AI reasoning: ${record['debt_amount']:.2f} is materially larger than normal daily cases, making it an abnormal exposure requiring validation.", {"record_id": record["record_id"], "debtor": record["debtor"], "debt_amount": record["debt_amount"]}))
+                recommendations.append(
+                    self._executive_recommendation(
+                        "abnormal_behavior",
+                        f"Abnormal high-value debt: {record['debtor']}",
+                        "critical",
+                        "Prevent one outlier from distorting collection performance and risk exposure.",
+                        "Assign executive review and verify taxpayer status, balance accuracy, and legal readiness today.",
+                        f"AI reasoning: ${record['debt_amount']:.2f} is materially larger than normal daily cases, making it an abnormal exposure requiring validation.",
+                        {
+                            "record_id": record["record_id"],
+                            "debtor": record["debtor"],
+                            "debt_amount": record["debt_amount"],
+                        },
+                    )
+                )
         return recommendations
 
-    def _daily_strategic_recommendations(self, health: float, efficiency: float, forecast: float, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _daily_strategic_recommendations(
+        self, health: float, efficiency: float, forecast: float, records: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
         severity = "high" if health < 50 or efficiency < 45 else "medium"
-        return [self._executive_recommendation("daily_strategy", "Daily executive collection strategy", severity, "Align management attention with the highest revenue and operational risks.", "Hold a 15-minute morning command meeting, confirm high-priority owners, and track forecast variance by 3:00 PM.", f"AI reasoning: Municipality health is {health}, collection efficiency is {efficiency}, and end-of-month revenue is forecast at ${forecast:.2f}; executive coordination is needed to protect the forecast across {len(records)} active cases.", {"municipality_health_score": health, "collection_efficiency_score": efficiency, "predicted_end_of_month_revenue": forecast, "case_count": len(records)})]
+        return [
+            self._executive_recommendation(
+                "daily_strategy",
+                "Daily executive collection strategy",
+                severity,
+                "Align management attention with the highest revenue and operational risks.",
+                "Hold a 15-minute morning command meeting, confirm high-priority owners, and track forecast variance by 3:00 PM.",
+                f"AI reasoning: Municipality health is {health}, collection efficiency is {efficiency}, and end-of-month revenue is forecast at ${forecast:.2f}; executive coordination is needed to protect the forecast across {len(records)} active cases.",
+                {
+                    "municipality_health_score": health,
+                    "collection_efficiency_score": efficiency,
+                    "predicted_end_of_month_revenue": forecast,
+                    "case_count": len(records),
+                },
+            )
+        ]
 
     @staticmethod
     def _normalize_key(key: Any) -> str:
@@ -676,7 +1051,9 @@ class CollectionAgent:
             return "CALL"
         return "NOTICE"
 
-    def _manager_assignment_dashboard(self, queues: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    def _manager_assignment_dashboard(
+        self, queues: dict[str, list[dict[str, Any]]]
+    ) -> dict[str, Any]:
         records = [record for queue in queues.values() for record in queue]
         return {
             "date": date.today().isoformat(),
@@ -711,9 +1088,7 @@ class CollectionAgent:
                 },
             )
             bucket["case_count"] += 1
-            bucket["debt_amount"] = round(
-                bucket["debt_amount"] + record.get("debt_amount", 0), 2
-            )
+            bucket["debt_amount"] = round(bucket["debt_amount"] + record.get("debt_amount", 0), 2)
             bucket["queues"][record["recommended_action"]] += 1
         return summary
 
@@ -768,7 +1143,9 @@ class CollectionAgent:
         shared_ids = set(current) & set(previous)
         min_change = float(rules.get("minimum_debt_change", 0))
         paid_threshold = float(rules.get("paid_debt_threshold", 0))
-        cleared_statuses = {str(status).lower() for status in rules.get("cleared_legal_statuses", [])}
+        cleared_statuses = {
+            str(status).lower() for status in rules.get("cleared_legal_statuses", [])
+        }
 
         increased, decreased, unchanged = [], [], []
         changed_address_or_mobile, changed_legal_status, changed_action_queue = [], [], []
@@ -778,18 +1155,33 @@ class CollectionAgent:
             after = current[debtor_id]
             delta = round(after["debt_amount"] - before["debt_amount"], 2)
             if delta > min_change:
-                increased.append({"debtor_id": debtor_id, "before": before, "after": after, "delta": delta})
+                increased.append(
+                    {"debtor_id": debtor_id, "before": before, "after": after, "delta": delta}
+                )
             elif delta < -min_change:
-                decreased.append({"debtor_id": debtor_id, "before": before, "after": after, "delta": delta})
+                decreased.append(
+                    {"debtor_id": debtor_id, "before": before, "after": after, "delta": delta}
+                )
             else:
                 unchanged.append({"debtor_id": debtor_id, "record": after})
-            if before.get("address") != after.get("address") or before.get("mobile") != after.get("mobile"):
-                changed_address_or_mobile.append({"debtor_id": debtor_id, "before": before, "after": after})
+            if before.get("address") != after.get("address") or before.get("mobile") != after.get(
+                "mobile"
+            ):
+                changed_address_or_mobile.append(
+                    {"debtor_id": debtor_id, "before": before, "after": after}
+                )
             if before.get("legal_status") != after.get("legal_status"):
-                changed_legal_status.append({"debtor_id": debtor_id, "before": before, "after": after})
+                changed_legal_status.append(
+                    {"debtor_id": debtor_id, "before": before, "after": after}
+                )
             if before.get("last_action_queue") != after.get("last_action_queue"):
-                changed_action_queue.append({"debtor_id": debtor_id, "before": before, "after": after})
-            if after["debt_amount"] <= paid_threshold or str(after.get("legal_status", "")).lower() in cleared_statuses:
+                changed_action_queue.append(
+                    {"debtor_id": debtor_id, "before": before, "after": after}
+                )
+            if (
+                after["debt_amount"] <= paid_threshold
+                or str(after.get("legal_status", "")).lower() in cleared_statuses
+            ):
                 fully_paid_or_cleared.append(after)
 
         removed = [previous[debtor_id] for debtor_id in sorted(set(previous) - set(current))]
@@ -797,7 +1189,9 @@ class CollectionAgent:
             "date": date.today().isoformat(),
             "previous_run_id": previous_run_id,
             "recommendation_only": True,
-            "new_debtors": [current[debtor_id] for debtor_id in sorted(set(current) - set(previous))],
+            "new_debtors": [
+                current[debtor_id] for debtor_id in sorted(set(current) - set(previous))
+            ],
             "removed_debtors": removed,
             "debt_amount_increased": increased,
             "debt_amount_decreased": decreased,
@@ -825,7 +1219,9 @@ class CollectionAgent:
             if after is None:
                 row["paid_or_cleared_cases"] += 1
                 row["cases_improved"] += 1
-                row["debt_reduced_amount"] = round(row["debt_reduced_amount"] + before["debt_amount"], 2)
+                row["debt_reduced_amount"] = round(
+                    row["debt_reduced_amount"] + before["debt_amount"], 2
+                )
                 continue
             delta = round(after["debt_amount"] - before["debt_amount"], 2)
             action = before.get("last_action_queue", "IGNORE")
@@ -843,10 +1239,17 @@ class CollectionAgent:
         for row in rows.values():
             row["performance_score"] = self._performance_score(row, rules)
         ranking = sorted(rows.values(), key=lambda row: row["performance_score"], reverse=True)
-        return {"date": date.today().isoformat(), "recommendation_only": True, "collectors": ranking}
+        return {
+            "date": date.today().isoformat(),
+            "recommendation_only": True,
+            "collectors": ranking,
+        }
 
     def _collector_alerts(
-        self, performance_report: dict[str, Any], snapshot: list[dict[str, Any]], rules: dict[str, Any]
+        self,
+        performance_report: dict[str, Any],
+        snapshot: list[dict[str, Any]],
+        rules: dict[str, Any],
     ) -> dict[str, Any]:
         alerts = []
         high_priority_score = int(rules.get("high_priority_ignored_score", 80))
@@ -854,19 +1257,55 @@ class CollectionAgent:
             assigned = max(row["assigned_case_count"], 1)
             unchanged_ratio = row["cases_unchanged"] / assigned
             if row["cases_unchanged"] >= rules.get("unchanged_many_threshold", 10):
-                alerts.append({"collector": row["collector"], "alert": "collector_has_many_unchanged_cases", "evidence": row})
+                alerts.append(
+                    {
+                        "collector": row["collector"],
+                        "alert": "collector_has_many_unchanged_cases",
+                        "evidence": row,
+                    }
+                )
             if unchanged_ratio >= rules.get("unchanged_ratio_alert", 0.7):
-                alerts.append({"collector": row["collector"], "alert": "reported_work_without_debt_change", "evidence": row})
-            if row["field_visit_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get("repeated_visit_no_progress_threshold", 2):
-                alerts.append({"collector": row["collector"], "alert": "repeated_visits_with_no_progress", "evidence": row})
-            if row["notice_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get("notice_no_payment_threshold", 5):
-                alerts.append({"collector": row["collector"], "alert": "notices_issued_no_payment_movement", "evidence": row})
+                alerts.append(
+                    {
+                        "collector": row["collector"],
+                        "alert": "reported_work_without_debt_change",
+                        "evidence": row,
+                    }
+                )
+            if row["field_visit_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get(
+                "repeated_visit_no_progress_threshold", 2
+            ):
+                alerts.append(
+                    {
+                        "collector": row["collector"],
+                        "alert": "repeated_visits_with_no_progress",
+                        "evidence": row,
+                    }
+                )
+            if row["notice_impact"] == 0 and row["follow_up_overdue_cases"] >= rules.get(
+                "notice_no_payment_threshold", 5
+            ):
+                alerts.append(
+                    {
+                        "collector": row["collector"],
+                        "alert": "notices_issued_no_payment_movement",
+                        "evidence": row,
+                    }
+                )
         ignored = [
-            record for record in snapshot
-            if record.get("priority_score", 0) >= high_priority_score and record.get("last_action_queue") == "IGNORE"
+            record
+            for record in snapshot
+            if record.get("priority_score", 0) >= high_priority_score
+            and record.get("last_action_queue") == "IGNORE"
         ]
         if ignored:
-            alerts.append({"collector": "Unassigned", "alert": "high_priority_cases_ignored", "evidence": ignored})
+            alerts.append(
+                {
+                    "collector": "Unassigned",
+                    "alert": "high_priority_cases_ignored",
+                    "evidence": ignored,
+                }
+            )
         return {"date": date.today().isoformat(), "recommendation_only": True, "alerts": alerts}
 
     def _manager_daily_monitoring_dashboard(
@@ -889,7 +1328,8 @@ class CollectionAgent:
             "total_imported_records_today": imported_count,
             "total_valid_records": valid_count,
             "total_new_debtors": len(change_report["new_debtors"]),
-            "total_removed_or_paid_debtors": len(change_report["removed_debtors"]) + len(change_report["fully_paid_or_cleared_debtors"]),
+            "total_removed_or_paid_debtors": len(change_report["removed_debtors"])
+            + len(change_report["fully_paid_or_cleared_debtors"]),
             "total_debt_yesterday": yesterday_debt,
             "total_debt_today": today_debt,
             "net_debt_change": round(today_debt - yesterday_debt, 2),
@@ -897,7 +1337,9 @@ class CollectionAgent:
             "collector_ranking": performance_report.get("collectors", []),
             "worst_collector_risks": alerts.get("alerts", [])[:10],
             "top_improved_cases": sorted(improved, key=lambda item: item["delta"])[:10],
-            "top_worsened_cases": sorted(worsened, key=lambda item: item["delta"], reverse=True)[:10],
+            "top_worsened_cases": sorted(worsened, key=lambda item: item["delta"], reverse=True)[
+                :10
+            ],
             "recommended_manager_actions": self._monitoring_manager_actions(change_report, alerts),
         }
 
@@ -955,14 +1397,20 @@ class CollectionAgent:
         }
 
     @staticmethod
-    def _monitoring_manager_actions(change_report: dict[str, Any], alerts: dict[str, Any]) -> list[str]:
+    def _monitoring_manager_actions(
+        change_report: dict[str, Any], alerts: dict[str, Any]
+    ) -> list[str]:
         actions = ["Review daily snapshot deltas before approving enforcement work."]
         if change_report["debt_amount_increased"]:
-            actions.append("Audit the largest debt increases and confirm balances against source files.")
+            actions.append(
+                "Audit the largest debt increases and confirm balances against source files."
+            )
         if alerts.get("alerts"):
             actions.append("Review collector alerts and require evidence for no-progress cases.")
         if change_report["new_debtors"]:
-            actions.append("Assign new debtors to the appropriate recommendation-only action queues.")
+            actions.append(
+                "Assign new debtors to the appropriate recommendation-only action queues."
+            )
         return actions
 
     def _load_json_config(self, filename: str, defaults: dict[str, Any]) -> dict[str, Any]:
@@ -1027,13 +1475,21 @@ class CollectionAgent:
             return 0
 
     @staticmethod
-    def _sum_by(records: list[dict[str, Any]], field_name: str) -> dict[str, dict[str, float | int]]:
+    def _sum_by(
+        records: list[dict[str, Any]], field_name: str
+    ) -> dict[str, dict[str, float | int]]:
         output: dict[str, dict[str, float | int]] = {}
         for record in records:
-            bucket = output.setdefault(record[field_name], {"case_count": 0, "debt_amount": 0.0, "forecast": 0.0})
+            bucket = output.setdefault(
+                record[field_name], {"case_count": 0, "debt_amount": 0.0, "forecast": 0.0}
+            )
             bucket["case_count"] += 1
             bucket["debt_amount"] = round(float(bucket["debt_amount"]) + record["debt_amount"], 2)
-            bucket["forecast"] = round(float(bucket["forecast"]) + record["debt_amount"] * record["estimated_success_probability"], 2)
+            bucket["forecast"] = round(
+                float(bucket["forecast"])
+                + record["debt_amount"] * record["estimated_success_probability"],
+                2,
+            )
         return output
 
     @staticmethod
