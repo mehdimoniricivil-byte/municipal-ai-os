@@ -365,6 +365,7 @@ def test_collection_workflow_preserves_all_current_steps_in_order():
         "run_ai_assistant",
         "generate_recommendations",
         "generate_work_queue",
+        "generate_mission_outputs",
         "generate_daily_snapshot",
         "generate_manager_briefing",
         "generate_executive_intelligence",

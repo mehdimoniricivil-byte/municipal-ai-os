@@ -1,0 +1,33 @@
+{
+  "high_value_debt_threshold": 10000,
+  "field_campaign_case_threshold": 3,
+  "field_campaign_debt_threshold": 15000,
+  "legal_statuses": ["legal", "legal_review", "commission_77"],
+  "priority_order": ["critical", "high", "medium", "low"],
+  "mission_templates": {
+    "high_value_recovery": {
+      "title_fa": "ماموریت وصول بدهی‌های بزرگ",
+      "objective_fa": "تمرکز مدیریت بر پرونده‌های با مبلغ بالا برای کاهش ریسک درآمدی شهرداری.",
+      "owner_role": "manager",
+      "default_priority": "high"
+    },
+    "field_campaign": {
+      "title_fa": "ماموریت بازدید میدانی منطقه‌ای",
+      "objective_fa": "تجمیع پرونده‌های هم‌منطقه و اعزام تیم میدانی برای پیگیری سریع.",
+      "owner_role": "field_inspection",
+      "default_priority": "high"
+    },
+    "legal_readiness": {
+      "title_fa": "ماموریت آماده‌سازی حقوقی",
+      "objective_fa": "آماده‌سازی پرونده‌های واجد شرایط برای اقدام حقوقی یا کمیسیون ۷۷.",
+      "owner_role": "legal",
+      "default_priority": "critical"
+    },
+    "collector_focus": {
+      "title_fa": "ماموریت تمرکز وصول‌گر",
+      "objective_fa": "شفاف‌سازی کار روزانه وصول‌گر برای پرونده‌های پرریسک و با احتمال وصول مناسب.",
+      "owner_role": "collection",
+      "default_priority": "medium"
+    }
+  }
+}
