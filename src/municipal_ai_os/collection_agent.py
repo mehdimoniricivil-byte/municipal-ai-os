@@ -22,6 +22,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from municipal_ai_os.field_activity_attribution import FieldActivityAttributionEngine
 from municipal_ai_os.financial_intelligence import FinancialIntelligenceDashboard
 
 
@@ -38,6 +39,7 @@ WORKFLOW_STEPS = [
     "generate_daily_snapshot",
     "generate_manager_briefing",
     "generate_executive_intelligence",
+    "generate_field_activity_attribution",
     "generate_financial_intelligence",
 ]
 
@@ -543,6 +545,37 @@ class CollectionAgent:
         self._write_json(state.run_id, "executive_decision_engine.json", intelligence)
         self._store_executive_recommendations(state.run_id, recommendations)
         return {"executive_intelligence": intelligence, "mayor_dashboard": dashboard}
+
+    def _generate_field_activity_attribution(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
+        previous_snapshot, _ = self._previous_snapshot(state.run_id)
+        activities = self._load_field_activity_log()
+        attribution = FieldActivityAttributionEngine(self.workspace).build(
+            run_id=state.run_id,
+            current_records=artifacts.get("daily_snapshot", []),
+            previous_records=previous_snapshot,
+            activities=activities,
+        )
+        for filename in [
+            "field_activity_attribution_report.json",
+            "collector_credit_report.json",
+            "unattributed_collections.json",
+            "field_activity_quality_report.json",
+            "manager_field_performance_dashboard.json",
+        ]:
+            key = filename.removesuffix(".json")
+            self._write_json(state.run_id, filename, attribution[key])
+        return {"field_activity_attribution": attribution}
+
+    def _load_field_activity_log(self) -> list[dict[str, Any]]:
+        path = self.inbox_dir / "field_activity_log.json"
+        if not path.exists():
+            return []
+        payload = json.loads(path.read_text())
+        if isinstance(payload, dict):
+            return list(payload.get("activities", []))
+        return list(payload)
 
     def _generate_financial_intelligence(
         self, state: RunState, artifacts: dict[str, Any]
