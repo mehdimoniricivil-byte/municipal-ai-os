@@ -24,6 +24,7 @@ from typing import Any, Iterable
 
 from municipal_ai_os.field_activity_attribution import FieldActivityAttributionEngine
 from municipal_ai_os.financial_intelligence import FinancialIntelligenceDashboard
+from municipal_ai_os.municipal_mission_engine import MissionContext, MunicipalMissionEngine
 
 
 WORKFLOW_STEPS = [
@@ -36,6 +37,7 @@ WORKFLOW_STEPS = [
     "run_ai_assistant",
     "generate_recommendations",
     "generate_work_queue",
+    "generate_mission_outputs",
     "generate_daily_snapshot",
     "generate_manager_briefing",
     "generate_executive_intelligence",
@@ -367,6 +369,7 @@ class CollectionAgent:
                     estimated_success_probability=record["success_probability"],
                 )
             )
+            recommendation["legal_status"] = record.get("legal_status") or record.get("status")
             recommendation["priority_score"] = record["score"]
             recommendation["zone"] = self._district_from_record(record)
             recs.append(recommendation)
@@ -387,6 +390,31 @@ class CollectionAgent:
         dashboard = self._manager_assignment_dashboard(queues)
         self._write_json(state.run_id, "manager_dashboard.json", dashboard)
         return {"work_queues": queues, "manager_dashboard": dashboard}
+
+    def _generate_mission_outputs(
+        self, state: RunState, artifacts: dict[str, Any]
+    ) -> dict[str, Any]:
+        mission_outputs = MunicipalMissionEngine().build(
+            MissionContext(
+                run_id=state.run_id,
+                recommendations=artifacts.get("recommendations", []),
+                scored_records=artifacts.get("scored_records", []),
+            )
+        )
+        self._write_json(
+            state.run_id, "municipal_missions.json", mission_outputs["municipal_missions"]
+        )
+        self._write_json(
+            state.run_id,
+            "municipal_mission_dashboard.json",
+            mission_outputs["municipal_mission_dashboard"],
+        )
+        run_dir = self.runs_dir / state.run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "human_readable_manager_report.md").write_text(
+            mission_outputs["human_readable_manager_report"], encoding="utf-8"
+        )
+        return {"mission_outputs": mission_outputs}
 
     def _generate_daily_snapshot(
         self, state: RunState, artifacts: dict[str, Any]
