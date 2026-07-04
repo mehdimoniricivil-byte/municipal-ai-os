@@ -377,9 +377,8 @@ def test_collection_workflow_preserves_all_current_steps_in_order():
 def test_collection_agent_source_has_no_merge_conflict_markers():
     source = Path("src/municipal_ai_os/collection_agent.py").read_text()
 
-    assert "<<<<<<<" not in source
-    assert "=======" not in source
-    assert ">>>>>>>" not in source
+    conflict_markers = ["<" * 7, "=" * 7, ">" * 7]
+    assert all(marker not in source for marker in conflict_markers)
     assert "generate_municipal_missions" in source
     assert "generate_field_activity_attribution" in source
     assert "generate_financial_intelligence" in source
