@@ -1,0 +1,36 @@
+{
+  "matching_weights": {
+    "exact_bill_id": 60,
+    "exact_debtor_id": 45,
+    "exact_property_id": 40,
+    "exact_national_id": 35,
+    "exact_mobile": 25,
+    "amount_similarity": 15,
+    "date_window": 10,
+    "normalized_address_similarity": 10,
+    "business_name_similarity": 5
+  },
+  "confidence_thresholds": {
+    "high": 70,
+    "medium": 45,
+    "low": 20
+  },
+  "verified_credit_min_confidence": "HIGH",
+  "date_window_days": 7,
+  "amount_tolerance_ratio": 0.1,
+  "address_similarity_threshold": 0.82,
+  "business_name_similarity_threshold": 0.9,
+  "require_strong_identifier_for_verified_credit": true,
+  "strong_identifier_fields": ["bill_id", "debtor_id", "property_id", "national_id", "mobile"],
+  "evidence_requirements": {
+    "gps_required": true,
+    "photo_required": true
+  },
+  "kpi_scoring": {
+    "base_quality_score": 100,
+    "missing_gps_penalty": 20,
+    "missing_photo_penalty": 20,
+    "failed_visit_penalty": 10,
+    "suspicious_repeated_claim_penalty": 25
+  }
+}
