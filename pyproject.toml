@@ -5,6 +5,9 @@ description = "Municipal AI OS autonomous collection agent"
 requires-python = ">=3.10"
 dependencies = [
   "openpyxl>=3.1.0",
+  "pandas>=2.0.0",
+  "SQLAlchemy>=2.0.0",
+  "psycopg[binary]>=3.1.0",
 ]
 
 [project.optional-dependencies]
