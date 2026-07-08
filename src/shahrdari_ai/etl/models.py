@@ -61,6 +61,11 @@ daily_snapshots = Table(
     Column("payment_date", String(64), nullable=True),
     Column("bill_amount", Numeric(18, 2), nullable=False, default=0),
     Column("outstanding_debt", Numeric(18, 2), nullable=False, default=0),
+    Column("business_tax", Numeric(18, 2), nullable=False, default=0),
+    Column("passage_tax", Numeric(18, 2), nullable=False, default=0),
+    Column("sidewalk_use_tax", Numeric(18, 2), nullable=False, default=0),
+    Column("signboard_tax", Numeric(18, 2), nullable=False, default=0),
+    Column("waste_fee", Numeric(18, 2), nullable=False, default=0),
     Column("created_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint("snapshot_date", "region", "identification_code", name="uq_daily_snapshot_key"),
 )

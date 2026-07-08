@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import logging
 import os
 import secrets
 from datetime import date
@@ -13,6 +14,8 @@ from fastapi.responses import HTMLResponse
 from .etl.engine import import_excel, make_engine
 
 IMPORT_DIR = Path("data/imports")
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Municipality Excel Upload")
 
@@ -113,12 +116,21 @@ async def upload_excel(
     total_rows = inserted = updated = skipped = 0
     try:
         result = import_excel(destination, selected_snapshot_date, selected_region, make_engine())
-        total_rows = result.rows_imported
+        total_rows = getattr(result, "total_rows", result.rows_imported)
         inserted = result.inserted_taxpayers
         updated = result.updated_taxpayers
         skipped = result.skipped_duplicates
+        if getattr(result, "row_errors", 0):
+            errors.append(f"ردیف‌های دارای شناسه نامعتبر: {result.row_errors}")
     except Exception as exc:
         status = "ناموفق"
+        logger.exception(
+            "Excel upload import failed: filename=%s snapshot_date=%s region=%s file_type=%s",
+            filename,
+            selected_snapshot_date,
+            selected_region,
+            selected_file_type,
+        )
         errors.append(str(exc))
 
     error_items = "".join(f"<li>{html.escape(error)}</li>" for error in errors) or "<li>ندارد</li>"
@@ -141,5 +153,5 @@ async def upload_excel(
   <ul class="{'error' if errors else ''}">{error_items}</ul>
 </section>
 <p><a href="/upload">بازگشت به صفحه بارگذاری</a></p>""",
-        status_code=200 if not errors else 500,
+        status_code=200 if status == "موفق" else 500,
     )
