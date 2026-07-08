@@ -35,6 +35,9 @@ class ImportResult:
     rows_imported: int
     changes: list[dict]
     report_path: Path
+    inserted_taxpayers: int = 0
+    updated_taxpayers: int = 0
+    skipped_duplicates: int = 0
 
 
 def make_engine(database_url: str | None = None) -> Engine:
@@ -174,13 +177,17 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
         run_id = conn.execute(insert(import_runs).values(snapshot_date=snapshot_date, region=region, source_file=str(file_path), status="running", rows_imported=0, started_at=now)).inserted_primary_key[0]
         previous_rows = _previous_snapshot_rows(conn, snapshot_date, region)
         rows = df.to_dict("records")
+        inserted_taxpayers = 0
+        updated_taxpayers = 0
         for row in rows:
             found = conn.execute(select(taxpayers.c.id).where(taxpayers.c.identification_code == row["identification_code"])).scalar_one_or_none()
             values = {k: row.get(k) for k in ["identification_code", "case_number", "operator_name", "job", "phone", "address"]} | {"updated_at": now}
             if found:
                 conn.execute(update(taxpayers).where(taxpayers.c.id == found).values(**values))
+                updated_taxpayers += 1
             else:
                 conn.execute(insert(taxpayers).values(**values, created_at=now))
+                inserted_taxpayers += 1
         snapshot_values = [row | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for row in rows]
         if snapshot_values:
             conn.execute(insert(daily_snapshots), snapshot_values)
@@ -189,7 +196,7 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
             conn.execute(insert(daily_changes), [c | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for c in changes])
         report_path = _write_report(snapshot_date, region, len(rows), changes, Path(report_dir))
         conn.execute(update(import_runs).where(import_runs.c.id == run_id).values(status="completed", rows_imported=len(rows), report_path=str(report_path), finished_at=datetime.now(timezone.utc)))
-    return ImportResult(run_id, len(rows), changes, report_path)
+    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, 0)
 
 
 def main(argv: list[str] | None = None) -> int:
