@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import create_engine, select
 
-from shahrdari_ai.etl.engine import detect_changes, import_excel, read_snapshot_excel
+from shahrdari_ai.etl.engine import detect_changes, import_excel, normalize_column_name, read_snapshot_excel
 from shahrdari_ai.etl.models import daily_changes, daily_snapshots, import_runs, taxpayers
 
 COLUMNS = {
@@ -22,6 +22,61 @@ COLUMNS = {
 
 def write_excel(path: Path, data: dict) -> None:
     pd.DataFrame(data).to_excel(path, index=False)
+
+
+def test_normalize_column_name_handles_arabic_persian_variants():
+    assert normalize_column_name("  كد\u200c  شناسايي  ") == "کد شناسایی"
+    assert normalize_column_name("ستون ۱۲٣") == "ستون 123"
+
+
+def test_read_snapshot_excel_accepts_real_world_arabic_persian_column_variants(tmp_path):
+    path = tmp_path / "real-world.xlsx"
+    data = {
+        "كد شناسايي": ["1", "2"],
+        "شماره  پرونده": ["P1", "P2"],
+        "نام متصدي": ["علی", "رضا"],
+        "شغل واحد": ["نانوایی", "سوپر"],
+        "شماره تماس": ["0912", "0935"],
+        "نشاني واحد صنفي": ["آدرس ۱", "آدرس ۲"],
+        "تاريخ پرداخت": [None, "1405-04-17"],
+        "مبلغ فيش": ["1,000", "2000"],
+        "بدهي معوقه": ["5000", "3000"],
+    }
+    write_excel(path, data)
+
+    df = read_snapshot_excel(path)
+
+    assert list(df.columns) == [
+        "identification_code",
+        "case_number",
+        "operator_name",
+        "job",
+        "phone",
+        "address",
+        "payment_date",
+        "bill_amount",
+        "outstanding_debt",
+    ]
+    assert df.loc[0, "identification_code"] == "1"
+    assert df.loc[0, "operator_name"] == "علی"
+    assert df.loc[0, "bill_amount"] == Decimal("1000.00")
+
+
+def test_read_snapshot_excel_missing_columns_error_is_persian_and_actionable(tmp_path):
+    path = tmp_path / "missing.xlsx"
+    write_excel(path, {"كد شناسايي": ["1"], "ستون ناشناس": ["x"]})
+
+    try:
+        read_snapshot_excel(path)
+    except ValueError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected missing-column ValueError")
+
+    assert "ستون‌های ضروری فایل اکسل پیدا نشدند" in message
+    assert "فیلد شماره پرونده (case_number)" in message
+    assert "شماره پرونده" in message
+    assert "ستون‌های موجود در فایل: كد شناسايي، ستون ناشناس" in message
 
 
 def test_read_snapshot_excel_uses_column_names_and_cleans_values(tmp_path):

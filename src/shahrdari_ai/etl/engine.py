@@ -14,19 +14,77 @@ from sqlalchemy.engine import Engine
 
 from .models import daily_changes, daily_snapshots, import_runs, metadata, taxpayers
 
-REQUIRED_COLUMNS = {
-    "کد شناسایی": "identification_code",
-    "شماره پرونده": "case_number",
-    "نام متصدی": "operator_name",
-    "شغل واحد": "job",
-    "شماره تماس": "phone",
-    "نشانی واحد صنفی": "address",
-    "تاریخ پرداخت": "payment_date",
-    "مبلغ فیش": "bill_amount",
-    "بدهی معوقه": "outstanding_debt",
+COLUMN_ALIASES = {
+    "identification_code": ["کد شناسایی", "كد شناسايي", "کد شناسايي", "كد شناسایی"],
+    "case_number": ["شماره پرونده"],
+    "operator_name": ["نام متصدی", "نام متصدي"],
+    "job": ["شغل واحد"],
+    "phone": ["شماره تماس"],
+    "address": ["نشانی واحد صنفی", "نشاني واحد صنفي", "نشانی واحد صنفي", "نشاني واحد صنفی"],
+    "payment_date": ["تاریخ پرداخت", "تاريخ پرداخت"],
+    "bill_amount": ["مبلغ فیش", "مبلغ فيش"],
+    "outstanding_debt": ["بدهی معوقه", "بدهي معوقه"],
 }
+
+FIELD_LABELS = {
+    "identification_code": "کد شناسایی",
+    "case_number": "شماره پرونده",
+    "operator_name": "نام متصدی",
+    "job": "شغل واحد",
+    "phone": "شماره تماس",
+    "address": "نشانی واحد صنفی",
+    "payment_date": "تاریخ پرداخت",
+    "bill_amount": "مبلغ فیش",
+    "outstanding_debt": "بدهی معوقه",
+}
+
+REQUIRED_COLUMNS = {aliases[0]: field for field, aliases in COLUMN_ALIASES.items()}
 TEXT_FIELDS = ["case_number", "operator_name", "job", "phone", "address", "payment_date"]
 PROFILE_CHANGE_FIELDS = ["phone", "address", "job"]
+
+_DIGIT_TRANSLATION = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def normalize_column_name(value: object) -> str:
+    text = "" if value is None else str(value)
+    text = text.translate(_DIGIT_TRANSLATION)
+    text = text.replace("ي", "ی").replace("ى", "ی").replace("ك", "ک")
+    text = text.replace("\u200c", " ").replace("\u200f", " ").replace("\ufeff", " ")
+    return " ".join(text.split())
+
+
+def _column_alias_lookup() -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for field, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            lookup[normalize_column_name(alias)] = field
+    return lookup
+
+
+def _format_missing_columns_error(missing_fields: list[str], actual_columns: list[object]) -> str:
+    lines = [
+        "ستون‌های ضروری فایل اکسل پیدا نشدند.",
+        "برای هر فیلد، یکی از نام‌های پذیرفته‌شده زیر باید در فایل وجود داشته باشد:",
+    ]
+    for field in missing_fields:
+        aliases = "، ".join(COLUMN_ALIASES[field])
+        lines.append(f"- فیلد {FIELD_LABELS[field]} ({field}): {aliases}")
+    actual = "، ".join(str(column) for column in actual_columns) or "بدون ستون"
+    lines.append(f"ستون‌های موجود در فایل: {actual}")
+    return "\n".join(lines)
+
+
+def _resolve_excel_columns(columns: Iterable[object]) -> dict[str, object]:
+    alias_lookup = _column_alias_lookup()
+    resolved: dict[str, object] = {}
+    for column in columns:
+        field = alias_lookup.get(normalize_column_name(column))
+        if field and field not in resolved:
+            resolved[field] = column
+    missing = [field for field in COLUMN_ALIASES if field not in resolved]
+    if missing:
+        raise ValueError(_format_missing_columns_error(missing, list(columns)))
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -35,6 +93,9 @@ class ImportResult:
     rows_imported: int
     changes: list[dict]
     report_path: Path
+    inserted_taxpayers: int = 0
+    updated_taxpayers: int = 0
+    skipped_duplicates: int = 0
 
 
 def make_engine(database_url: str | None = None) -> Engine:
@@ -72,10 +133,10 @@ def _clean_money(value: object) -> Decimal:
 
 def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df = pd.read_excel(path, dtype=object)
-    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
-    if missing:
-        raise ValueError("Missing required Excel columns: " + ", ".join(missing))
-    df = df[list(REQUIRED_COLUMNS)].rename(columns=REQUIRED_COLUMNS)
+    resolved_columns = _resolve_excel_columns(df.columns)
+    df = df[[resolved_columns[field] for field in COLUMN_ALIASES]].rename(
+        columns={source: field for field, source in resolved_columns.items()}
+    )
     for field in TEXT_FIELDS:
         df[field] = df[field].map(_clean_text)
     df["identification_code"] = df["identification_code"].map(_clean_text)
@@ -174,13 +235,17 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
         run_id = conn.execute(insert(import_runs).values(snapshot_date=snapshot_date, region=region, source_file=str(file_path), status="running", rows_imported=0, started_at=now)).inserted_primary_key[0]
         previous_rows = _previous_snapshot_rows(conn, snapshot_date, region)
         rows = df.to_dict("records")
+        inserted_taxpayers = 0
+        updated_taxpayers = 0
         for row in rows:
             found = conn.execute(select(taxpayers.c.id).where(taxpayers.c.identification_code == row["identification_code"])).scalar_one_or_none()
             values = {k: row.get(k) for k in ["identification_code", "case_number", "operator_name", "job", "phone", "address"]} | {"updated_at": now}
             if found:
                 conn.execute(update(taxpayers).where(taxpayers.c.id == found).values(**values))
+                updated_taxpayers += 1
             else:
                 conn.execute(insert(taxpayers).values(**values, created_at=now))
+                inserted_taxpayers += 1
         snapshot_values = [row | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for row in rows]
         if snapshot_values:
             conn.execute(insert(daily_snapshots), snapshot_values)
@@ -189,7 +254,7 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
             conn.execute(insert(daily_changes), [c | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for c in changes])
         report_path = _write_report(snapshot_date, region, len(rows), changes, Path(report_dir))
         conn.execute(update(import_runs).where(import_runs.c.id == run_id).values(status="completed", rows_imported=len(rows), report_path=str(report_path), finished_at=datetime.now(timezone.utc)))
-    return ImportResult(run_id, len(rows), changes, report_path)
+    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, 0)
 
 
 def main(argv: list[str] | None = None) -> int:
