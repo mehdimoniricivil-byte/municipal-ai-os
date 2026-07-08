@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
-from sqlalchemy import create_engine, delete, insert, select, update
+from sqlalchemy import create_engine, delete, inspect, insert, select, text, update
 from sqlalchemy.engine import Engine
 
 from .models import daily_changes, daily_snapshots, import_runs, metadata, taxpayers
@@ -20,10 +20,15 @@ COLUMN_ALIASES = {
     "operator_name": ["نام متصدی", "نام متصدي"],
     "job": ["شغل واحد"],
     "phone": ["شماره تماس"],
-    "address": ["نشانی واحد صنفی", "نشاني واحد صنفي", "نشانی واحد صنفي", "نشاني واحد صنفی"],
+    "address": ["آدرس واحد", "نشانی واحد صنفی", "نشاني واحد صنفي", "نشانی واحد صنفي", "نشاني واحد صنفی"],
     "payment_date": ["تاریخ پرداخت", "تاريخ پرداخت"],
     "bill_amount": ["مبلغ فیش", "مبلغ فيش"],
     "outstanding_debt": ["بدهی معوقه", "بدهي معوقه"],
+    "business_tax": ["عوارض کسب", "عوارض كسب"],
+    "passage_tax": ["عوارض راه عبور", "عوارض  راه عبور"],
+    "sidewalk_use_tax": ["عوارض استفاده از معبر"],
+    "signboard_tax": ["عوارض تابلو"],
+    "waste_fee": ["رفع زباله", "دفع زباله", "دفع زبااله"],
 }
 
 FIELD_LABELS = {
@@ -32,14 +37,20 @@ FIELD_LABELS = {
     "operator_name": "نام متصدی",
     "job": "شغل واحد",
     "phone": "شماره تماس",
-    "address": "نشانی واحد صنفی",
+    "address": "آدرس واحد",
     "payment_date": "تاریخ پرداخت",
     "bill_amount": "مبلغ فیش",
     "outstanding_debt": "بدهی معوقه",
+    "business_tax": "عوارض کسب",
+    "passage_tax": "عوارض راه عبور",
+    "sidewalk_use_tax": "عوارض استفاده از معبر",
+    "signboard_tax": "عوارض تابلو",
+    "waste_fee": "رفع زباله",
 }
 
 REQUIRED_COLUMNS = {aliases[0]: field for field, aliases in COLUMN_ALIASES.items()}
 TEXT_FIELDS = ["case_number", "operator_name", "job", "phone", "address", "payment_date"]
+MONEY_FIELDS = ["bill_amount", "outstanding_debt", "business_tax", "passage_tax", "sidewalk_use_tax", "signboard_tax", "waste_fee"]
 PROFILE_CHANGE_FIELDS = ["phone", "address", "job"]
 
 _DIGIT_TRANSLATION = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
@@ -96,6 +107,8 @@ class ImportResult:
     inserted_taxpayers: int = 0
     updated_taxpayers: int = 0
     skipped_duplicates: int = 0
+    total_rows: int = 0
+    row_errors: int = 0
 
 
 def make_engine(database_url: str | None = None) -> Engine:
@@ -107,6 +120,30 @@ def make_engine(database_url: str | None = None) -> Engine:
 
 def create_tables(engine: Engine) -> None:
     metadata.create_all(engine)
+    _ensure_runtime_schema(engine)
+
+
+def _ensure_runtime_schema(engine: Engine) -> None:
+    """Apply lightweight additive migrations required by existing deployments."""
+    required_daily_snapshot_columns = {
+        "business_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "passage_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "sidewalk_use_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "signboard_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "waste_fee": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+    }
+    inspector = inspect(engine)
+    existing_columns = {column["name"] for column in inspector.get_columns("daily_snapshots")}
+    missing_columns = [
+        (name, ddl)
+        for name, ddl in required_daily_snapshot_columns.items()
+        if name not in existing_columns
+    ]
+    if not missing_columns:
+        return
+    with engine.begin() as conn:
+        for name, ddl in missing_columns:
+            conn.execute(text(f"ALTER TABLE daily_snapshots ADD COLUMN {name} {ddl}"))
 
 
 def _clean_text(value: object) -> str | None:
@@ -131,22 +168,38 @@ def _clean_money(value: object) -> Decimal:
         raise ValueError(f"Invalid monetary value: {value!r}") from exc
 
 
+
+def _build_taxpayer_identifier(row: pd.Series) -> str | None:
+    identification_code = _clean_text(row.get("identification_code"))
+    case_number = _clean_text(row.get("case_number"))
+    if identification_code and case_number:
+        return f"{identification_code} | {case_number}"
+    return identification_code or case_number
+
 def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df = pd.read_excel(path, dtype=object)
     resolved_columns = _resolve_excel_columns(df.columns)
+    total_rows = len(df)
     df = df[[resolved_columns[field] for field in COLUMN_ALIASES]].rename(
         columns={source: field for field, source in resolved_columns.items()}
     )
     for field in TEXT_FIELDS:
         df[field] = df[field].map(_clean_text)
     df["identification_code"] = df["identification_code"].map(_clean_text)
-    if df["identification_code"].isna().any():
-        raise ValueError("کد شناسایی is required for every row")
-    if df["identification_code"].duplicated().any():
-        duplicates = sorted(df.loc[df["identification_code"].duplicated(), "identification_code"].unique())
-        raise ValueError("Duplicate کد شناسایی values: " + ", ".join(duplicates))
-    df["bill_amount"] = df["bill_amount"].map(_clean_money)
-    df["outstanding_debt"] = df["outstanding_debt"].map(_clean_money)
+    df["identification_code"] = df.apply(_build_taxpayer_identifier, axis=1)
+    missing_identifier_mask = df["identification_code"].isna()
+    row_errors = int(missing_identifier_mask.sum())
+    if missing_identifier_mask.any():
+        df = df.loc[~missing_identifier_mask].copy()
+    duplicate_mask = df["identification_code"].duplicated(keep=False)
+    skipped_duplicates = int(duplicate_mask.sum())
+    if duplicate_mask.any():
+        df = df.loc[~duplicate_mask].copy()
+    df.attrs["total_rows"] = total_rows
+    df.attrs["skipped_duplicates"] = skipped_duplicates
+    df.attrs["row_errors"] = row_errors
+    for field in MONEY_FIELDS:
+        df[field] = df[field].map(_clean_money)
     return df
 
 
@@ -225,6 +278,9 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
     engine = engine or make_engine()
     create_tables(engine)
     df = read_snapshot_excel(file_path)
+    skipped_duplicates = int(df.attrs.get("skipped_duplicates", 0))
+    total_rows = int(df.attrs.get("total_rows", len(df)))
+    row_errors = int(df.attrs.get("row_errors", 0))
     now = datetime.now(timezone.utc)
     with engine.begin() as conn:
         existing_run = conn.execute(select(import_runs.c.id).where(import_runs.c.snapshot_date == snapshot_date, import_runs.c.region == region)).scalar_one_or_none()
@@ -254,7 +310,7 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
             conn.execute(insert(daily_changes), [c | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for c in changes])
         report_path = _write_report(snapshot_date, region, len(rows), changes, Path(report_dir))
         conn.execute(update(import_runs).where(import_runs.c.id == run_id).values(status="completed", rows_imported=len(rows), report_path=str(report_path), finished_at=datetime.now(timezone.utc)))
-    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, 0)
+    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, skipped_duplicates, total_rows, row_errors)
 
 
 def main(argv: list[str] | None = None) -> int:
