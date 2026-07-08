@@ -14,19 +14,77 @@ from sqlalchemy.engine import Engine
 
 from .models import daily_changes, daily_snapshots, import_runs, metadata, taxpayers
 
-REQUIRED_COLUMNS = {
-    "کد شناسایی": "identification_code",
-    "شماره پرونده": "case_number",
-    "نام متصدی": "operator_name",
-    "شغل واحد": "job",
-    "شماره تماس": "phone",
-    "نشانی واحد صنفی": "address",
-    "تاریخ پرداخت": "payment_date",
-    "مبلغ فیش": "bill_amount",
-    "بدهی معوقه": "outstanding_debt",
+COLUMN_ALIASES = {
+    "identification_code": ["کد شناسایی", "كد شناسايي", "کد شناسايي", "كد شناسایی"],
+    "case_number": ["شماره پرونده"],
+    "operator_name": ["نام متصدی", "نام متصدي"],
+    "job": ["شغل واحد"],
+    "phone": ["شماره تماس"],
+    "address": ["نشانی واحد صنفی", "نشاني واحد صنفي", "نشانی واحد صنفي", "نشاني واحد صنفی"],
+    "payment_date": ["تاریخ پرداخت", "تاريخ پرداخت"],
+    "bill_amount": ["مبلغ فیش", "مبلغ فيش"],
+    "outstanding_debt": ["بدهی معوقه", "بدهي معوقه"],
 }
+
+FIELD_LABELS = {
+    "identification_code": "کد شناسایی",
+    "case_number": "شماره پرونده",
+    "operator_name": "نام متصدی",
+    "job": "شغل واحد",
+    "phone": "شماره تماس",
+    "address": "نشانی واحد صنفی",
+    "payment_date": "تاریخ پرداخت",
+    "bill_amount": "مبلغ فیش",
+    "outstanding_debt": "بدهی معوقه",
+}
+
+REQUIRED_COLUMNS = {aliases[0]: field for field, aliases in COLUMN_ALIASES.items()}
 TEXT_FIELDS = ["case_number", "operator_name", "job", "phone", "address", "payment_date"]
 PROFILE_CHANGE_FIELDS = ["phone", "address", "job"]
+
+_DIGIT_TRANSLATION = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
+
+
+def normalize_column_name(value: object) -> str:
+    text = "" if value is None else str(value)
+    text = text.translate(_DIGIT_TRANSLATION)
+    text = text.replace("ي", "ی").replace("ى", "ی").replace("ك", "ک")
+    text = text.replace("\u200c", " ").replace("\u200f", " ").replace("\ufeff", " ")
+    return " ".join(text.split())
+
+
+def _column_alias_lookup() -> dict[str, str]:
+    lookup: dict[str, str] = {}
+    for field, aliases in COLUMN_ALIASES.items():
+        for alias in aliases:
+            lookup[normalize_column_name(alias)] = field
+    return lookup
+
+
+def _format_missing_columns_error(missing_fields: list[str], actual_columns: list[object]) -> str:
+    lines = [
+        "ستون‌های ضروری فایل اکسل پیدا نشدند.",
+        "برای هر فیلد، یکی از نام‌های پذیرفته‌شده زیر باید در فایل وجود داشته باشد:",
+    ]
+    for field in missing_fields:
+        aliases = "، ".join(COLUMN_ALIASES[field])
+        lines.append(f"- فیلد {FIELD_LABELS[field]} ({field}): {aliases}")
+    actual = "، ".join(str(column) for column in actual_columns) or "بدون ستون"
+    lines.append(f"ستون‌های موجود در فایل: {actual}")
+    return "\n".join(lines)
+
+
+def _resolve_excel_columns(columns: Iterable[object]) -> dict[str, object]:
+    alias_lookup = _column_alias_lookup()
+    resolved: dict[str, object] = {}
+    for column in columns:
+        field = alias_lookup.get(normalize_column_name(column))
+        if field and field not in resolved:
+            resolved[field] = column
+    missing = [field for field in COLUMN_ALIASES if field not in resolved]
+    if missing:
+        raise ValueError(_format_missing_columns_error(missing, list(columns)))
+    return resolved
 
 
 @dataclass(frozen=True)
@@ -75,10 +133,10 @@ def _clean_money(value: object) -> Decimal:
 
 def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df = pd.read_excel(path, dtype=object)
-    missing = [column for column in REQUIRED_COLUMNS if column not in df.columns]
-    if missing:
-        raise ValueError("Missing required Excel columns: " + ", ".join(missing))
-    df = df[list(REQUIRED_COLUMNS)].rename(columns=REQUIRED_COLUMNS)
+    resolved_columns = _resolve_excel_columns(df.columns)
+    df = df[[resolved_columns[field] for field in COLUMN_ALIASES]].rename(
+        columns={source: field for field, source in resolved_columns.items()}
+    )
     for field in TEXT_FIELDS:
         df[field] = df[field].map(_clean_text)
     df["identification_code"] = df["identification_code"].map(_clean_text)

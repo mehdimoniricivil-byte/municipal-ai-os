@@ -44,7 +44,9 @@ The server saves uploaded files under:
 data/imports/
 ```
 
-After the file is saved, the page runs the existing ETL import logic with `DATABASE_URL` and shows a Persian result page with:
+After the file is saved, the page runs the existing ETL import logic with `DATABASE_URL`. The ETL accepts common Persian/Arabic column-name variants such as `كد شناسايي`, `نام متصدي`, `نشاني واحد صنفي`, `تاريخ پرداخت`, `مبلغ فيش`, and `بدهي معوقه` without requiring manual Excel edits. See [ETL Excel Column Matching](docs/etl_excel_import.md) for the accepted aliases and normalization rules.
+
+The upload result page shows:
 
 - uploader
 - region
