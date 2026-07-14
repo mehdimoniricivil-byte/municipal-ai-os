@@ -36,13 +36,17 @@ import_runs = Table(
     Column("snapshot_date", String(32), nullable=False),
     Column("region", String(255), nullable=False),
     Column("source_file", Text, nullable=False),
+    Column("file_type", String(64), nullable=False, default="snapshot"),
+    Column("uploaded_by", String(255), nullable=False, default="system"),
+    Column("source_file_name", Text, nullable=False, default=""),
+    Column("imported_at", DateTime(timezone=True), nullable=False),
     Column("status", String(32), nullable=False),
     Column("rows_imported", Integer, nullable=False, default=0),
     Column("report_path", Text, nullable=True),
     Column("error_message", Text, nullable=True),
     Column("started_at", DateTime(timezone=True), nullable=False),
     Column("finished_at", DateTime(timezone=True), nullable=True),
-    UniqueConstraint("snapshot_date", "region", name="uq_import_runs_snapshot_region"),
+    UniqueConstraint("snapshot_date", "region", "file_type", name="uq_import_runs_snapshot_region_file_type"),
 )
 
 daily_snapshots = Table(
