@@ -125,6 +125,12 @@ def create_tables(engine: Engine) -> None:
 
 def _ensure_runtime_schema(engine: Engine) -> None:
     """Apply lightweight additive migrations required by existing deployments."""
+    required_import_run_columns = {
+        "file_type": "VARCHAR(64) NOT NULL DEFAULT 'snapshot'",
+        "uploaded_by": "VARCHAR(255) NOT NULL DEFAULT 'system'",
+        "source_file_name": "TEXT NOT NULL DEFAULT ''",
+        "imported_at": "DATETIME",
+    }
     required_daily_snapshot_columns = {
         "business_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "passage_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
@@ -133,16 +139,18 @@ def _ensure_runtime_schema(engine: Engine) -> None:
         "waste_fee": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
     }
     inspector = inspect(engine)
-    existing_columns = {column["name"] for column in inspector.get_columns("daily_snapshots")}
-    missing_columns = [
-        (name, ddl)
-        for name, ddl in required_daily_snapshot_columns.items()
-        if name not in existing_columns
-    ]
-    if not missing_columns:
+    existing_import_columns = {column["name"] for column in inspector.get_columns("import_runs")}
+    missing_import_columns = [(name, ddl) for name, ddl in required_import_run_columns.items() if name not in existing_import_columns]
+    existing_snapshot_columns = {column["name"] for column in inspector.get_columns("daily_snapshots")}
+    missing_snapshot_columns = [(name, ddl) for name, ddl in required_daily_snapshot_columns.items() if name not in existing_snapshot_columns]
+    if not missing_import_columns and not missing_snapshot_columns:
         return
     with engine.begin() as conn:
-        for name, ddl in missing_columns:
+        for name, ddl in missing_import_columns:
+            conn.execute(text(f"ALTER TABLE import_runs ADD COLUMN {name} {ddl}"))
+        if "imported_at" in {name for name, _ in missing_import_columns}:
+            conn.execute(text("UPDATE import_runs SET imported_at = COALESCE(finished_at, started_at) WHERE imported_at IS NULL"))
+        for name, ddl in missing_snapshot_columns:
             conn.execute(text(f"ALTER TABLE daily_snapshots ADD COLUMN {name} {ddl}"))
 
 
@@ -274,7 +282,16 @@ def _write_report(snapshot_date: str, region: str, rows_imported: int, changes: 
     return path
 
 
-def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine: Engine | None = None, report_dir: str | Path = "data/reports") -> ImportResult:
+def import_excel(
+    file_path: str | Path,
+    snapshot_date: str,
+    region: str,
+    engine: Engine | None = None,
+    report_dir: str | Path = "data/reports",
+    file_type: str = "snapshot",
+    uploaded_by: str = "system",
+    source_file_name: str | None = None,
+) -> ImportResult:
     engine = engine or make_engine()
     create_tables(engine)
     df = read_snapshot_excel(file_path)
@@ -283,12 +300,32 @@ def import_excel(file_path: str | Path, snapshot_date: str, region: str, engine:
     row_errors = int(df.attrs.get("row_errors", 0))
     now = datetime.now(timezone.utc)
     with engine.begin() as conn:
-        existing_run = conn.execute(select(import_runs.c.id).where(import_runs.c.snapshot_date == snapshot_date, import_runs.c.region == region)).scalar_one_or_none()
+        selected_file_type = (file_type or "snapshot").strip() or "snapshot"
+        selected_uploader = (uploaded_by or "system").strip() or "system"
+        selected_source_name = source_file_name or Path(file_path).name
+        existing_run = conn.execute(
+            select(import_runs.c.id).where(
+                import_runs.c.snapshot_date == snapshot_date,
+                import_runs.c.region == region,
+                import_runs.c.file_type == selected_file_type,
+            )
+        ).scalar_one_or_none()
         if existing_run is not None:
-            conn.execute(delete(daily_changes).where(daily_changes.c.import_run_id == existing_run))
-            conn.execute(delete(daily_snapshots).where(daily_snapshots.c.import_run_id == existing_run))
-            conn.execute(delete(import_runs).where(import_runs.c.id == existing_run))
-        run_id = conn.execute(insert(import_runs).values(snapshot_date=snapshot_date, region=region, source_file=str(file_path), status="running", rows_imported=0, started_at=now)).inserted_primary_key[0]
+            raise ValueError("Duplicate snapshot import: this region, file type, and snapshot date already exist")
+        run_id = conn.execute(
+            insert(import_runs).values(
+                snapshot_date=snapshot_date,
+                region=region,
+                source_file=str(file_path),
+                file_type=selected_file_type,
+                uploaded_by=selected_uploader,
+                source_file_name=selected_source_name,
+                imported_at=now,
+                status="running",
+                rows_imported=0,
+                started_at=now,
+            )
+        ).inserted_primary_key[0]
         previous_rows = _previous_snapshot_rows(conn, snapshot_date, region)
         rows = df.to_dict("records")
         inserted_taxpayers = 0
