@@ -69,3 +69,40 @@ def test_upload_saves_xlsx_and_returns_import_counts(tmp_path, monkeypatch):
     assert "تاریخ فایل:</strong> 1405-04-17" in text
     assert "مودیان اضافه‌شده:</strong> 1" in text
     assert "مودیان به‌روزرسانی‌شده:</strong> 1" in text
+
+
+def test_role_permissions_match_required_access_rules():
+    assert "upload_all" in upload_app.ROLE_PERMISSIONS[upload_app.Role.ADMIN]
+    assert "view_all_reports" in upload_app.ROLE_PERMISSIONS[upload_app.Role.ADMIN]
+    assert "financial_access" in upload_app.ROLE_PERMISSIONS[upload_app.Role.ACCOUNTANT]
+    assert "upload_all" in upload_app.ROLE_PERMISSIONS[upload_app.Role.ACCOUNTANT]
+    assert upload_app.ROLE_PERMISSIONS[upload_app.Role.REGION_MANAGER] == frozenset({"view_assigned_region", "upload_assigned_region"})
+    assert upload_app.ROLE_PERMISSIONS[upload_app.Role.DISTRICT_MANAGER] == frozenset({"view_assigned_district", "upload_assigned_district"})
+    assert upload_app.ROLE_PERMISSIONS[upload_app.Role.FIELD_AGENT] == frozenset({"view_assigned_cases", "record_case_action"})
+
+
+def test_region_and_district_managers_cannot_upload_outside_scope(monkeypatch):
+    region_user = upload_app.UserAccess("regional", upload_app.Role.REGION_MANAGER, region="منطقه یک")
+    district_user = upload_app.UserAccess("district", upload_app.Role.DISTRICT_MANAGER, district="ناحیه دو")
+
+    upload_app._ensure_upload_allowed(region_user, "منطقه یک")
+    upload_app._ensure_upload_allowed(district_user, "منطقه یک", "ناحیه دو")
+
+    for user, region, district in [(region_user, "منطقه دو", None), (district_user, "منطقه یک", "ناحیه سه")]:
+        try:
+            upload_app._ensure_upload_allowed(user, region, district)
+        except HTTPException as exc:
+            assert exc.status_code == 403
+        else:
+            raise AssertionError("out-of-scope upload should be forbidden")
+
+
+def test_openapi_documents_role_aware_upload_and_report_parameters():
+    schema = upload_app.app.openapi()
+
+    assert "role permissions" in schema["info"]["description"]
+    upload_schema_ref = schema["paths"]["/upload"]["post"]["requestBody"]["content"]["multipart/form-data"]["schema"]["$ref"]
+    upload_schema_name = upload_schema_ref.rsplit("/", 1)[-1]
+    assert "district" in schema["components"]["schemas"][upload_schema_name]["properties"]
+    dashboard_parameters = {param["name"] for param in schema["paths"]["/dashboard"]["get"]["parameters"]}
+    assert {"username", "password"}.issubset(dashboard_parameters)
