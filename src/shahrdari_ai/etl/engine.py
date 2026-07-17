@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
-from sqlalchemy import create_engine, delete, inspect, insert, select, text, update
+from sqlalchemy import create_engine, inspect, insert, select, text, update
 from sqlalchemy.engine import Engine
 
 from .models import daily_changes, daily_snapshots, import_runs, metadata, taxpayers

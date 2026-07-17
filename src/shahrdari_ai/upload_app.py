@@ -9,11 +9,20 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import quote
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse
 
 from sqlalchemy import text
 
+from .auth import (
+    TokenResponse,
+    UserCreate,
+    UserLogin,
+    UserRead,
+    authenticate_user,
+    create_user_record,
+    get_current_user,
+)
 from .etl.engine import import_excel, make_engine
 
 IMPORT_DIR = Path("data/imports")
@@ -21,6 +30,21 @@ IMPORT_DIR = Path("data/imports")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Municipality Excel Upload")
+
+
+@app.post("/api/users", response_model=UserRead, status_code=201, tags=["users"])
+def create_user(payload: UserCreate) -> UserRead:
+    return create_user_record(payload)
+
+
+@app.post("/api/auth/login", response_model=TokenResponse, tags=["auth"])
+def login_user(payload: UserLogin) -> TokenResponse:
+    return authenticate_user(payload)
+
+
+@app.get("/api/users/me", response_model=UserRead, tags=["users"])
+def read_current_user(current_user: UserRead = Depends(get_current_user)) -> UserRead:
+    return current_user
 
 
 def _login_is_valid(username: str | None, password: str | None) -> bool:
