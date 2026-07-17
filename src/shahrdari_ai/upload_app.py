@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import os
 import secrets
+from dataclasses import dataclass
+from enum import Enum
 from datetime import date
 from pathlib import Path
 from typing import Annotated
@@ -20,7 +23,104 @@ IMPORT_DIR = Path("data/imports")
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Municipality Excel Upload")
+app = FastAPI(
+    title="Municipality Excel Upload",
+    description=(
+        "Upload and reporting endpoints enforce role permissions for ADMIN, "
+        "ACCOUNTANT, REGION_MANAGER, DISTRICT_MANAGER, and FIELD_AGENT users. "
+        "Configure users with UPLOAD_USERS_JSON; the legacy UPLOAD_USERNAME user remains ADMIN."
+    ),
+)
+
+
+class Role(str, Enum):
+    ADMIN = "ADMIN"
+    ACCOUNTANT = "ACCOUNTANT"
+    REGION_MANAGER = "REGION_MANAGER"
+    DISTRICT_MANAGER = "DISTRICT_MANAGER"
+    FIELD_AGENT = "FIELD_AGENT"
+
+
+ROLE_PERMISSIONS: dict[Role, frozenset[str]] = {
+    Role.ADMIN: frozenset({"view_all", "upload_all", "view_all_reports", "financial_access"}),
+    Role.ACCOUNTANT: frozenset({"financial_access", "upload_all", "view_financial_reports"}),
+    Role.REGION_MANAGER: frozenset({"view_assigned_region", "upload_assigned_region"}),
+    Role.DISTRICT_MANAGER: frozenset({"view_assigned_district", "upload_assigned_district"}),
+    Role.FIELD_AGENT: frozenset({"view_assigned_cases", "record_case_action"}),
+}
+
+
+@dataclass(frozen=True)
+class UserAccess:
+    username: str
+    role: Role
+    region: str | None = None
+    district: str | None = None
+    assigned_case_ids: frozenset[str] = frozenset()
+
+    @property
+    def permissions(self) -> frozenset[str]:
+        return ROLE_PERMISSIONS[self.role]
+
+
+def _configured_users() -> dict[str, UserAccess]:
+    raw = os.environ.get("UPLOAD_USERS_JSON")
+    users: dict[str, UserAccess] = {}
+    if raw:
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("UPLOAD_USERS_JSON must be valid JSON") from exc
+        for username, cfg in payload.items():
+            role = Role(str(cfg.get("role", "")).upper())
+            users[str(username)] = UserAccess(
+                username=str(username),
+                role=role,
+                region=cfg.get("region"),
+                district=cfg.get("district"),
+                assigned_case_ids=frozenset(str(case) for case in cfg.get("assigned_case_ids", [])),
+            )
+    legacy_username = os.environ.get("UPLOAD_USERNAME")
+    if legacy_username and legacy_username not in users:
+        users[legacy_username] = UserAccess(username=legacy_username, role=Role.ADMIN)
+    return users
+
+
+def _authenticated_user(username: str | None, password: str | None) -> UserAccess:
+    if not _login_is_valid(username, password):
+        raise HTTPException(status_code=401, detail="نام کاربری یا رمز عبور نادرست است")
+    users = _configured_users()
+    return users.get(str(username), UserAccess(username=str(username), role=Role.ADMIN))
+
+
+def _ensure_upload_allowed(user: UserAccess, region: str, district: str | None = None) -> None:
+    if "upload_all" in user.permissions:
+        return
+    if user.role is Role.REGION_MANAGER and user.region == region:
+        return
+    if user.role is Role.DISTRICT_MANAGER and user.district and district == user.district:
+        return
+    raise HTTPException(status_code=403, detail="این نقش اجازه بارگذاری برای این محدوده را ندارد")
+
+
+def _scope_filters(user: UserAccess | None, region: str | None, district: str | None = None) -> tuple[str | None, str | None, frozenset[str] | None]:
+    if user is None or user.role in {Role.ADMIN, Role.ACCOUNTANT}:
+        return region, district, None
+    if user.role is Role.REGION_MANAGER:
+        return user.region, district, None
+    if user.role is Role.DISTRICT_MANAGER:
+        return region, user.district, None
+    if user.role is Role.FIELD_AGENT:
+        return region, district, user.assigned_case_ids
+    return region, district, None
+
+
+def _optional_authenticated_user(username: str | None, password: str | None) -> UserAccess | None:
+    if username or password:
+        return _authenticated_user(username, password)
+    if os.environ.get("UPLOAD_USERS_JSON"):
+        raise HTTPException(status_code=401, detail="برای مشاهده گزارش‌ها ورود لازم است")
+    return None
 
 
 def _login_is_valid(username: str | None, password: str | None) -> bool:
@@ -84,6 +184,8 @@ def upload_form() -> HTMLResponse:
   <input id="snapshot_date" name="snapshot_date" type="text" value="{today}" required>
   <label for="region">منطقه</label>
   <input id="region" name="region" type="text" value="منطقه یک" required>
+  <label for="district">ناحیه</label>
+  <input id="district" name="district" type="text" placeholder="اختیاری">
   <label for="file_type">نوع فایل</label>
   <select id="file_type" name="file_type" required>
     <option value="snapshot">فایل وضعیت روزانه</option>
@@ -105,9 +207,9 @@ async def upload_excel(
     region: Annotated[str, Form()],
     file_type: Annotated[str, Form()],
     file: Annotated[UploadFile, File()],
+    district: Annotated[str | None, Form()] = None,
 ) -> HTMLResponse:
-    if not _login_is_valid(username, password):
-        raise HTTPException(status_code=401, detail="نام کاربری یا رمز عبور نادرست است")
+    user = _authenticated_user(username, password)
     filename = Path(file.filename or "").name
     if Path(filename).suffix.lower() != ".xlsx":
         raise HTTPException(status_code=400, detail="فقط فایل‌های .xlsx پذیرفته می‌شوند")
@@ -119,6 +221,8 @@ async def upload_excel(
 
     uploader = username.strip()
     selected_region = region.strip()
+    selected_district = (district or "").strip() or None
+    _ensure_upload_allowed(user, selected_region, selected_district)
     selected_file_type = file_type.strip()
     selected_snapshot_date = snapshot_date.strip()
 
@@ -134,6 +238,7 @@ async def upload_excel(
             file_type=selected_file_type,
             uploaded_by=uploader,
             source_file_name=filename,
+            district=selected_district,
         )
         total_rows = getattr(result, "total_rows", result.rows_imported)
         inserted = result.inserted_taxpayers
@@ -160,6 +265,7 @@ async def upload_excel(
 <section class="card">
   <p><strong>بارگذار:</strong> {html.escape(uploader)}</p>
   <p><strong>منطقه:</strong> {html.escape(selected_region)}</p>
+  <p><strong>ناحیه:</strong> {html.escape(selected_district or "-")}</p>
   <p><strong>نوع فایل:</strong> {html.escape(selected_file_type)}</p>
   <p><strong>تاریخ فایل:</strong> {html.escape(selected_snapshot_date)}</p>
   <p><strong>نام فایل:</strong> {html.escape(filename)}</p>
@@ -180,7 +286,7 @@ def _money(value: object) -> str:
     return f"{int(value or 0):,}"
 
 
-def _dashboard_filters(region: str | None, snapshot_date: str | None, file_type: str | None) -> tuple[str, dict[str, str]]:
+def _dashboard_filters(region: str | None, snapshot_date: str | None, file_type: str | None, district: str | None = None, case_ids: frozenset[str] | None = None) -> tuple[str, dict[str, str]]:
     clauses = []
     params = {}
     if region:
@@ -189,6 +295,19 @@ def _dashboard_filters(region: str | None, snapshot_date: str | None, file_type:
     if snapshot_date:
         clauses.append("s.snapshot_date = :snapshot_date")
         params["snapshot_date"] = snapshot_date
+    if district:
+        clauses.append("COALESCE(s.district, s.region) = :district")
+        params["district"] = district
+    if case_ids is not None:
+        if not case_ids:
+            clauses.append("1 = 0")
+        else:
+            case_clauses = []
+            for index, case_id in enumerate(sorted(case_ids)):
+                key = f"case_id_{index}"
+                case_clauses.append(f"s.case_number = :{key}")
+                params[key] = case_id
+            clauses.append("(" + " OR ".join(case_clauses) + ")")
     if file_type:
         clauses.append("r.file_type = :file_type")
         params["file_type"] = file_type
@@ -202,8 +321,10 @@ def _query_rows(sql: str, params: dict | None = None) -> list[dict]:
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
-def dashboard(region: str | None = None, snapshot_date: str | None = None, file_type: str | None = None) -> HTMLResponse:
-    where, params = _dashboard_filters(region, snapshot_date, file_type)
+def dashboard(region: str | None = None, snapshot_date: str | None = None, file_type: str | None = None, username: str | None = None, password: str | None = None) -> HTMLResponse:
+    user = _optional_authenticated_user(username, password)
+    scoped_region, scoped_district, case_ids = _scope_filters(user, region)
+    where, params = _dashboard_filters(scoped_region, snapshot_date, file_type, scoped_district, case_ids)
     kpi = _query_rows(f"""
         SELECT COUNT(DISTINCT s.identification_code) total_taxpayers,
                COALESCE(SUM(s.outstanding_debt),0) total_outstanding_debt,
@@ -254,8 +375,10 @@ def dashboard(region: str | None = None, snapshot_date: str | None = None, file_
 
 
 @app.get("/taxpayers", response_class=HTMLResponse)
-def taxpayers_page(q: str | None = None, region: str | None = None, snapshot_date: str | None = None, file_type: str | None = None) -> HTMLResponse:
-    where, params = _dashboard_filters(region, snapshot_date, file_type)
+def taxpayers_page(q: str | None = None, region: str | None = None, snapshot_date: str | None = None, file_type: str | None = None, username: str | None = None, password: str | None = None) -> HTMLResponse:
+    user = _optional_authenticated_user(username, password)
+    scoped_region, scoped_district, case_ids = _scope_filters(user, region)
+    where, params = _dashboard_filters(scoped_region, snapshot_date, file_type, scoped_district, case_ids)
     clauses = [where[7:]] if where else []
     if q:
         clauses.append("(s.operator_name LIKE :q OR s.phone LIKE :q OR s.identification_code LIKE :q OR s.case_number LIKE :q OR s.address LIKE :q)")
@@ -271,13 +394,28 @@ def taxpayers_page(q: str | None = None, region: str | None = None, snapshot_dat
 
 
 @app.get("/taxpayers/{taxpayer_id}", response_class=HTMLResponse)
-def taxpayer_detail(taxpayer_id: str) -> HTMLResponse:
+def taxpayer_detail(taxpayer_id: str, username: str | None = None, password: str | None = None) -> HTMLResponse:
+    user = _optional_authenticated_user(username, password)
     rows = _query_rows("""
-        SELECT identification_code, case_number, operator_name, job, phone, address, region, snapshot_date, bill_amount, outstanding_debt, business_tax
+        SELECT identification_code, case_number, operator_name, job, phone, address, region, district, snapshot_date, bill_amount, outstanding_debt, business_tax
         FROM daily_snapshots WHERE identification_code = :id ORDER BY snapshot_date DESC, region
     """, {"id": taxpayer_id})
     if not rows:
         raise HTTPException(status_code=404, detail="مودی پیدا نشد")
+    if user:
+        scoped_region, scoped_district, case_ids = _scope_filters(user, None)
+        visible = []
+        for row in rows:
+            if scoped_region and row.get("region") != scoped_region:
+                continue
+            if scoped_district and row.get("district", row.get("region")) != scoped_district:
+                continue
+            if case_ids is not None and str(row.get("case_number")) not in case_ids:
+                continue
+            visible.append(row)
+        rows = visible
+        if not rows:
+            raise HTTPException(status_code=403, detail="این نقش اجازه مشاهده این پرونده را ندارد")
     first = rows[0]
     body = f"<h1>{html.escape(str(first.get('operator_name') or taxpayer_id))}</h1><p>کد شناسایی: {html.escape(taxpayer_id)}</p><p>تلفن: {html.escape(str(first.get('phone') or ''))}</p><p>نشانی: {html.escape(str(first.get('address') or ''))}</p><h2>سوابق snapshot</h2><table><tr><th>تاریخ</th><th>منطقه</th><th>فیش</th><th>بدهی</th><th>عوارض کسب</th></tr>" + ''.join(f'<tr><td>{html.escape(str(r["snapshot_date"]))}</td><td>{html.escape(str(r["region"]))}</td><td>{_money(r["bill_amount"])}</td><td>{_money(r["outstanding_debt"])}</td><td>{_money(r["business_tax"])}</td></tr>' for r in rows) + "</table>"
     return _page("جزئیات مودی", body)

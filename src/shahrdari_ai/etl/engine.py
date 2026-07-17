@@ -17,6 +17,7 @@ from .models import daily_changes, daily_snapshots, import_runs, metadata, taxpa
 COLUMN_ALIASES = {
     "identification_code": ["کد شناسایی", "كد شناسايي", "کد شناسايي", "كد شناسایی"],
     "case_number": ["شماره پرونده"],
+    "district": ["ناحیه", "ناحيه", "منطقه فرعی", "منطقه فرعي"],
     "operator_name": ["نام متصدی", "نام متصدي"],
     "job": ["شغل واحد"],
     "phone": ["شماره تماس"],
@@ -49,7 +50,8 @@ FIELD_LABELS = {
 }
 
 REQUIRED_COLUMNS = {aliases[0]: field for field, aliases in COLUMN_ALIASES.items()}
-TEXT_FIELDS = ["case_number", "operator_name", "job", "phone", "address", "payment_date"]
+TEXT_FIELDS = ["case_number", "district", "operator_name", "job", "phone", "address", "payment_date"]
+OPTIONAL_COLUMNS = {"district"}
 MONEY_FIELDS = ["bill_amount", "outstanding_debt", "business_tax", "passage_tax", "sidewalk_use_tax", "signboard_tax", "waste_fee"]
 PROFILE_CHANGE_FIELDS = ["phone", "address", "job"]
 
@@ -92,7 +94,7 @@ def _resolve_excel_columns(columns: Iterable[object]) -> dict[str, object]:
         field = alias_lookup.get(normalize_column_name(column))
         if field and field not in resolved:
             resolved[field] = column
-    missing = [field for field in COLUMN_ALIASES if field not in resolved]
+    missing = [field for field in COLUMN_ALIASES if field not in resolved and field not in OPTIONAL_COLUMNS]
     if missing:
         raise ValueError(_format_missing_columns_error(missing, list(columns)))
     return resolved
@@ -137,6 +139,7 @@ def _ensure_runtime_schema(engine: Engine) -> None:
         "sidewalk_use_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "signboard_tax": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
         "waste_fee": "NUMERIC(18, 2) NOT NULL DEFAULT 0",
+        "district": "VARCHAR(255)",
     }
     inspector = inspect(engine)
     existing_import_columns = {column["name"] for column in inspector.get_columns("import_runs")}
@@ -188,11 +191,12 @@ def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df = pd.read_excel(path, dtype=object)
     resolved_columns = _resolve_excel_columns(df.columns)
     total_rows = len(df)
-    df = df[[resolved_columns[field] for field in COLUMN_ALIASES]].rename(
+    df = df[[source for source in resolved_columns.values()]].rename(
         columns={source: field for field, source in resolved_columns.items()}
     )
     for field in TEXT_FIELDS:
-        df[field] = df[field].map(_clean_text)
+        if field in df.columns:
+            df[field] = df[field].map(_clean_text)
     df["identification_code"] = df["identification_code"].map(_clean_text)
     df["identification_code"] = df.apply(_build_taxpayer_identifier, axis=1)
     missing_identifier_mask = df["identification_code"].isna()
@@ -208,7 +212,8 @@ def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df.attrs["row_errors"] = row_errors
     for field in MONEY_FIELDS:
         df[field] = df[field].map(_clean_money)
-    return df
+    ordered_columns = [field for field in COLUMN_ALIASES if field in df.columns]
+    return df[ordered_columns]
 
 
 def _rows_by_key(rows: Iterable[dict]) -> dict[str, dict]:
@@ -291,6 +296,7 @@ def import_excel(
     file_type: str = "snapshot",
     uploaded_by: str = "system",
     source_file_name: str | None = None,
+    district: str | None = None,
 ) -> ImportResult:
     engine = engine or make_engine()
     create_tables(engine)
@@ -339,7 +345,7 @@ def import_excel(
             else:
                 conn.execute(insert(taxpayers).values(**values, created_at=now))
                 inserted_taxpayers += 1
-        snapshot_values = [row | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for row in rows]
+        snapshot_values = [row | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "district": row.get("district") or district, "created_at": now} for row in rows]
         if snapshot_values:
             conn.execute(insert(daily_snapshots), snapshot_values)
         changes = detect_changes(df, previous_rows)
