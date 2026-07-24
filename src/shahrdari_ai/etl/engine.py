@@ -111,6 +111,7 @@ class ImportResult:
     skipped_duplicates: int = 0
     total_rows: int = 0
     row_errors: int = 0
+    invalid_rows: tuple[int, ...] = ()
 
 
 def make_engine(database_url: str | None = None) -> Engine:
@@ -201,6 +202,7 @@ def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df["identification_code"] = df.apply(_build_taxpayer_identifier, axis=1)
     missing_identifier_mask = df["identification_code"].isna()
     row_errors = int(missing_identifier_mask.sum())
+    invalid_rows = tuple(int(index) + 2 for index in df.index[missing_identifier_mask])
     if missing_identifier_mask.any():
         df = df.loc[~missing_identifier_mask].copy()
     duplicate_mask = df["identification_code"].duplicated(keep=False)
@@ -210,6 +212,7 @@ def read_snapshot_excel(path: str | Path) -> pd.DataFrame:
     df.attrs["total_rows"] = total_rows
     df.attrs["skipped_duplicates"] = skipped_duplicates
     df.attrs["row_errors"] = row_errors
+    df.attrs["invalid_rows"] = invalid_rows
     for field in MONEY_FIELDS:
         df[field] = df[field].map(_clean_money)
     ordered_columns = [field for field in COLUMN_ALIASES if field in df.columns]
@@ -304,6 +307,7 @@ def import_excel(
     skipped_duplicates = int(df.attrs.get("skipped_duplicates", 0))
     total_rows = int(df.attrs.get("total_rows", len(df)))
     row_errors = int(df.attrs.get("row_errors", 0))
+    invalid_rows = tuple(df.attrs.get("invalid_rows", ()))
     now = datetime.now(timezone.utc)
     with engine.begin() as conn:
         selected_file_type = (file_type or "snapshot").strip() or "snapshot"
@@ -353,7 +357,7 @@ def import_excel(
             conn.execute(insert(daily_changes), [c | {"import_run_id": run_id, "snapshot_date": snapshot_date, "region": region, "created_at": now} for c in changes])
         report_path = _write_report(snapshot_date, region, len(rows), changes, Path(report_dir))
         conn.execute(update(import_runs).where(import_runs.c.id == run_id).values(status="completed", rows_imported=len(rows), report_path=str(report_path), finished_at=datetime.now(timezone.utc)))
-    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, skipped_duplicates, total_rows, row_errors)
+    return ImportResult(run_id, len(rows), changes, report_path, inserted_taxpayers, updated_taxpayers, skipped_duplicates, total_rows, row_errors, invalid_rows)
 
 
 def main(argv: list[str] | None = None) -> int:
