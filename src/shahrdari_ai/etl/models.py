@@ -11,9 +11,25 @@ from sqlalchemy import (
     Table,
     Text,
     UniqueConstraint,
+    Boolean,
 )
 
 metadata = MetaData()
+
+
+users = Table(
+    "users",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", Text, nullable=False),
+    Column("username", String(255), nullable=False, unique=True, index=True),
+    Column("password_hash", Text, nullable=False),
+    Column("role", String(64), nullable=False, index=True),
+    Column("region", String(255), nullable=True, index=True),
+    Column("district", String(255), nullable=True, index=True),
+    Column("is_active", Boolean, nullable=False, default=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+)
 
 taxpayers = Table(
     "taxpayers",
@@ -56,6 +72,7 @@ daily_snapshots = Table(
     Column("import_run_id", Integer, ForeignKey("import_runs.id"), nullable=False, index=True),
     Column("snapshot_date", String(32), nullable=False, index=True),
     Column("region", String(255), nullable=False, index=True),
+    Column("district", String(255), nullable=True, index=True),
     Column("identification_code", String(255), nullable=False, index=True),
     Column("case_number", String(255), nullable=True, index=True),
     Column("operator_name", Text, nullable=True),
@@ -81,6 +98,7 @@ daily_changes = Table(
     Column("import_run_id", Integer, ForeignKey("import_runs.id"), nullable=False, index=True),
     Column("snapshot_date", String(32), nullable=False, index=True),
     Column("region", String(255), nullable=False, index=True),
+    Column("district", String(255), nullable=True, index=True),
     Column("identification_code", String(255), nullable=False, index=True),
     Column("case_number", String(255), nullable=True),
     Column("change_type", String(64), nullable=False, index=True),
