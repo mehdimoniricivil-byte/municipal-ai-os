@@ -48,25 +48,40 @@ def get_collection_summary(request: CollectionSummaryRequest) -> CollectionSumma
             data_status="region_not_found",
         )
 
-    # Use only the latest completed snapshot for each matching region so the
-    # same taxpayer is not counted repeatedly across cumulative daily files.
+    # Snapshot dates are stored as Gregorian strings while payment dates are
+    # Jalali strings. Therefore, choose the latest completed cumulative
+    # snapshot independently, then filter its payment rows by normalized
+    # Jalali payment_date values.
     statement = text(
         """
         WITH latest_runs AS (
             SELECT region, MAX(id) AS import_run_id
             FROM import_runs
             WHERE status = 'completed'
-              AND snapshot_date <= :to_date
               AND region IN (:region_1, :region_2, :region_3)
             GROUP BY region
+        ), normalized_payments AS (
+            SELECT s.bill_amount,
+                   REPLACE(
+                       TRANSLATE(
+                           TRIM(s.payment_date),
+                           '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩',
+                           '01234567890123456789'
+                       ),
+                       '/',
+                       '-'
+                   ) AS normalized_payment_date
+            FROM daily_snapshots s
+            JOIN latest_runs lr ON lr.import_run_id = s.import_run_id
+            WHERE s.payment_date IS NOT NULL
+              AND TRIM(s.payment_date) <> ''
+              AND LOWER(TRIM(s.payment_date)) <> 'nan'
         )
-        SELECT COALESCE(SUM(s.bill_amount), 0) AS actual_collection_irr,
+        SELECT COALESCE(SUM(bill_amount), 0) AS actual_collection_irr,
                COUNT(*) AS payment_count
-        FROM daily_snapshots s
-        JOIN latest_runs lr ON lr.import_run_id = s.import_run_id
-        WHERE s.payment_date IS NOT NULL
-          AND s.payment_date >= :from_date
-          AND s.payment_date <= :to_date
+        FROM normalized_payments
+        WHERE normalized_payment_date >= :from_date
+          AND normalized_payment_date <= :to_date
         """
     )
 
