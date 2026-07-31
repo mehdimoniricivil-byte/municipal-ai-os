@@ -37,8 +37,8 @@ awk -v port="$STAGING_PORT" -v has_staging="$HAS_STAGING" '
     in_staging=1
     found_staging=1
   }
-  in_staging && /^[[:space:]]*proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:[0-9]+\/;/ {
-    print "        proxy_pass http://127.0.0.1:" port "/;"
+  in_staging && /^[[:space:]]*proxy_pass[[:space:]]+http:\/\/127\.0\.0\.1:[0-9]+\/?;/ {
+    print "        proxy_pass http://127.0.0.1:" port ";"
     next
   }
   in_staging && /^[[:space:]]*}/ {
@@ -46,7 +46,7 @@ awk -v port="$STAGING_PORT" -v has_staging="$HAS_STAGING" '
   }
   has_staging != "true" && !inserted && /^[[:space:]]*location \/backend-v1\/[[:space:]]*\{/ {
     print "    location /backend-v1-staging/ {"
-    print "        proxy_pass http://127.0.0.1:" port "/;"
+    print "        proxy_pass http://127.0.0.1:" port ";"
     print "        proxy_http_version 1.1;"
     print "        proxy_set_header Host $host;"
     print "        proxy_set_header X-Real-IP $remote_addr;"

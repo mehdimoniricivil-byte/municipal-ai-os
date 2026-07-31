@@ -63,3 +63,7 @@ The staging compose file binds only to the first available localhost port in
 `127.0.0.1:8300-8399` and joins the existing PostgreSQL Docker network through
 `FINANCIAL_DOCKER_NETWORK`. It does not expose another PostgreSQL instance and
 does not replace the production port `8001`.
+
+The staging Nginx `proxy_pass` intentionally has no trailing slash. This keeps
+the `/backend-v1-staging` prefix in the upstream request, which Starlette needs
+to resolve mounted static dashboard files when `ROOT_PATH` is configured.
