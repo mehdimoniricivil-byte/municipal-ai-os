@@ -58,3 +58,7 @@ Before switching the production upstream:
 5. Verify the statements page loads and permission checks reject unauthorized
    roles.
 6. Confirm no fixed sample figures remain visible when either API is offline.
+
+The staging compose file binds only to `127.0.0.1:8002` and joins the existing
+PostgreSQL Docker network through `FINANCIAL_DOCKER_NETWORK`. It does not expose
+another PostgreSQL instance and does not replace the production port `8001`.
