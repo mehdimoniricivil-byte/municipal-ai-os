@@ -1,0 +1,27 @@
+services:
+  api:
+    build: .
+    container_name: shahrdari-financial-staging
+    env_file:
+      - .env
+    environment:
+      APP_ENV: staging
+      AUTO_CREATE_SCHEMA: "false"
+      STORAGE_PATH: /app/storage
+    ports:
+      - "127.0.0.1:8002:8000"
+    volumes:
+      - ./storage:/app/storage
+    networks:
+      - municipal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/live')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+networks:
+  municipal:
+    external: true
+    name: ${FINANCIAL_DOCKER_NETWORK}
