@@ -84,5 +84,6 @@ else
   echo "Nginx staging route already points to port $STAGING_PORT"
 fi
 
-curl -fsS -o /dev/null -w "PUBLIC STAGING LOGIN: %{http_code}\n" "$PUBLIC_LOGIN"
+PUBLIC_CHECK="${PUBLIC_LOGIN}?check=$(date +%s)"
+curl -fsS -o /dev/null -w "PUBLIC STAGING LOGIN: %{http_code}\n" "$PUBLIC_CHECK"
 echo "$PUBLIC_LOGIN"

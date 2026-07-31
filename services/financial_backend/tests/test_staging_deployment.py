@@ -16,4 +16,5 @@ def test_staging_port_is_dynamic_across_compose_and_proxy_scripts():
     assert '127.0.0.1:${STAGING_PORT}' in proxy
     assert 'proxy_pass http://127.0.0.1:" port ";"' in proxy
     assert 'proxy_pass http://127.0.0.1:" port "/;"' not in proxy
+    assert "?check=$(date +%s)" in proxy
     assert "127.0.0.1:8002" not in compose + deploy + proxy
