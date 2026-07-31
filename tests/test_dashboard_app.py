@@ -73,5 +73,5 @@ def test_dashboard_v2_uses_existing_api_and_keeps_upload_link():
     assert response.status_code == 200
     text = response.body.decode("utf-8")
     assert "داشبورد وصول عوارض شهرداری" in text
-    assert "fetch('/api/dashboard?'" in text
-    assert 'href="/upload"' in text
+    assert "fetch('api/dashboard?'" in text
+    assert 'href="upload"' in text
