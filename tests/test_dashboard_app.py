@@ -66,3 +66,12 @@ def test_import_excel_prevents_duplicate_snapshot_imports(tmp_path):
         assert "Duplicate snapshot import" in str(exc)
     else:
         raise AssertionError("duplicate import should fail")
+
+
+def test_dashboard_v2_uses_existing_api_and_keeps_upload_link():
+    response = upload_app.dashboard_v2()
+    assert response.status_code == 200
+    text = response.body.decode("utf-8")
+    assert "داشبورد وصول عوارض شهرداری" in text
+    assert "fetch('/api/dashboard?'" in text
+    assert 'href="/upload"' in text
