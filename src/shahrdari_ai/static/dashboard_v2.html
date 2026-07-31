@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Shahrdari AI | داشبورد وصول</title>
+  <style>
+    :root{--bg:#07111f;--panel:#101c2e;--line:#20324a;--muted:#8fa2ba;--text:#f5f8fc;--cyan:#28d7e5;--blue:#4d8dff;--green:#37d399;--red:#ff667d;--amber:#ffbd59}
+    *{box-sizing:border-box} body{margin:0;background:radial-gradient(circle at 80% 0,#102b42 0,transparent 35%),var(--bg);color:var(--text);font-family:Tahoma,"Segoe UI",sans-serif;min-height:100vh}
+    button,select,input{font:inherit}.shell{display:grid;grid-template-columns:240px 1fr;min-height:100vh}.side{border-left:1px solid var(--line);padding:24px 18px;background:#091524d9;backdrop-filter:blur(18px)}
+    .brand{display:flex;gap:12px;align-items:center;margin-bottom:28px}.logo{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,var(--cyan),var(--blue));box-shadow:0 0 24px #28d7e555}.brand b{font-size:19px}.brand small{display:block;color:var(--muted);margin-top:4px}.nav{display:grid;gap:8px}.nav a{color:var(--muted);text-decoration:none;padding:12px 14px;border-radius:12px}.nav a.active,.nav a:hover{color:white;background:#17263b}.side-foot{position:sticky;top:calc(100vh - 130px);margin-top:35px;color:var(--muted);font-size:12px;line-height:1.8}
+    main{padding:25px 28px 50px;min-width:0}.top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:22px}.title h1{font-size:24px;margin:0 0 7px}.title p{color:var(--muted);margin:0}.status{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--line);border-radius:999px;color:var(--muted);white-space:nowrap}.dot{width:9px;height:9px;border-radius:50%;background:var(--amber)}.dot.ok{background:var(--green);box-shadow:0 0 12px #37d39999}
+    .filters{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr)) auto;gap:12px;margin-bottom:18px}.filters input,.filters select{width:100%;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px}.filters button{border:0;border-radius:12px;background:linear-gradient(135deg,var(--cyan),var(--blue));color:#04101e;font-weight:bold;padding:0 22px;cursor:pointer}
+    .kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.card{background:linear-gradient(150deg,#122238e8,#0d1929e8);border:1px solid var(--line);border-radius:17px;padding:17px;box-shadow:0 15px 35px #0003}.card .label{color:var(--muted);font-size:13px}.card .value{font-size:23px;font-weight:800;margin:12px 0 4px;direction:ltr;text-align:right}.card .hint{font-size:12px;color:var(--muted)}.accent{border-color:#28d7e566}.good{color:var(--green)}.bad{color:var(--red)}
+    .grid{display:grid;grid-template-columns:1.55fr 1fr;gap:14px;margin-top:14px}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}.section-title h2{font-size:16px;margin:0}.section-title span{font-size:12px;color:var(--muted)}
+    .chart{height:250px;display:flex;align-items:end;gap:10px;border-bottom:1px solid var(--line);padding:10px 3px 0;overflow-x:auto}.bar-wrap{height:100%;min-width:48px;display:grid;grid-template-rows:1fr 28px;align-items:end}.bar{width:100%;min-height:3px;border-radius:8px 8px 0 0;background:linear-gradient(var(--cyan),var(--blue));position:relative}.bar:hover:after{content:attr(data-value);position:absolute;bottom:100%;right:50%;transform:translateX(50%);background:#020812;padding:5px 7px;border-radius:7px;white-space:nowrap;font-size:11px}.bar-label{font-size:10px;color:var(--muted);text-align:center;padding-top:6px}
+    .progress{height:12px;background:#081321;border-radius:10px;overflow:hidden;margin:20px 0 10px}.progress i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--cyan),var(--green));border-radius:10px;transition:width .5s}.achievement{font-size:44px;font-weight:900}.target-list{display:grid;gap:12px;margin-top:18px}.target-row{display:flex;justify-content:space-between;color:var(--muted)}.target-row b{color:var(--text)}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:right;padding:11px 8px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:normal}tbody tr:hover{background:#ffffff05}.fresh{display:inline-block;padding:4px 8px;border-radius:999px;background:#37d39919;color:var(--green)}.stale{display:inline-block;padding:4px 8px;border-radius:999px;background:#ffbd5919;color:var(--amber)}
+    .empty{color:var(--muted);padding:35px;text-align:center}.error{border-color:#ff667d66;color:#ffd4da}.mobile-nav{display:none}
+    @media(max-width:1050px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.shell{grid-template-columns:1fr}.side{display:none}.mobile-nav{display:block;color:var(--muted);font-size:13px}.filters{grid-template-columns:1fr 1fr}.filters button{min-height:44px}}
+    @media(max-width:620px){main{padding:18px 12px 40px}.top{align-items:flex-start}.status{font-size:11px}.filters{grid-template-columns:1fr}.kpis{grid-template-columns:1fr 1fr;gap:9px}.card{padding:13px}.card .value{font-size:17px}.title h1{font-size:20px}.achievement{font-size:34px}.wide{overflow:auto}}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><div class="logo"></div><div><b>Shahrdari AI</b><small>مدیریت هوشمند وصول</small></div></div>
+    <nav class="nav"><a class="active" href="dashboard-v2">نمای کلی</a><a href="upload">ورود اطلاعات</a><a href="taxpayers">مودیان</a><a href="#trends">روند وصول</a><a href="#regions">مناطق</a></nav>
+    <div class="side-foot">داده‌های این صفحه مستقیماً از موتور آپلود فعال و پایگاه داده اصلی خوانده می‌شوند.</div>
+  </aside>
+  <main>
+    <div class="top"><div class="title"><div class="mobile-nav">Shahrdari AI</div><h1>داشبورد وصول عوارض شهرداری</h1><p id="subtitle">در حال دریافت آخرین اطلاعات…</p></div><div class="status"><i id="dot" class="dot"></i><span id="statusText">در حال اتصال</span></div></div>
+    <form id="filters" class="filters"><select id="scope"><option value="">همه مناطق و نواحی</option></select><input id="reportDate" placeholder="تاریخ گزارش؛ نمونه 1405/04/31"><input id="district" placeholder="ناحیه (اختیاری)"><button>به‌روزرسانی</button></form>
+    <section class="kpis" id="kpis"></section>
+    <section class="grid" id="trends"><div class="card"><div class="section-title"><h2>روند وصول روزانه</h2><span>۱۲ نقطه آخر</span></div><div id="chart" class="chart"></div></div><div class="card accent"><div class="section-title"><h2>تحقق هدف ماه</h2><span id="targetState"></span></div><div id="achievement" class="achievement">۰٪</div><div class="progress"><i id="progress"></i></div><div class="target-list"><div class="target-row"><span>وصول ماه</span><b id="monthValue">۰</b></div><div class="target-row"><span>هدف ماه</span><b id="targetValue">۰</b></div><div class="target-row"><span>مانده</span><b id="remainingValue">۰</b></div></div></div></section>
+    <section class="grid" id="regions"><div class="card wide"><div class="section-title"><h2>وضعیت مناطق</h2><span>آخرین فایل معتبر هر محدوده</span></div><table><thead><tr><th>محدوده</th><th>تاریخ</th><th>ردیف</th><th>فیش صادره</th><th>وصول</th><th>بدهی</th></tr></thead><tbody id="regionsBody"></tbody></table></div><div class="card wide"><div class="section-title"><h2>بدهکاران عمده</h2><span>۲۰ پرونده اول</span></div><table><thead><tr><th>پرونده</th><th>نام</th><th>بدهی</th></tr></thead><tbody id="debtorsBody"></tbody></table></div></section>
+  </main>
+</div>
+<script>
+const fa=n=>new Intl.NumberFormat('fa-IR').format(Number(n||0));
+const money=n=>fa(Math.round(Number(n||0)))+' ریال';
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const metricCards=[['monthly_target','هدف ماه'],['monthly_collection','وصول ماه'],['achievement_percentage','درصد تحقق','percent'],['remaining_to_target','باقی‌مانده تا هدف'],['weekly_collection','وصول هفته'],['latest_day_collection','وصول آخرین روز'],['issued_bill_count','تعداد فیش صادره','number'],['overdue_debt','بدهی معوق']];
+async function load(){
+  dot.className='dot';statusText.textContent='در حال اتصال';
+  const q=new URLSearchParams();if(scope.value)q.set('scope_name',scope.value);if(reportDate.value.trim())q.set('report_date',reportDate.value.trim());if(district.value.trim())q.set('district',district.value.trim());
+  try{
+    const r=await fetch('api/dashboard?'+q);if(!r.ok)throw new Error('خطا در دریافت اطلاعات');const d=await r.json(),m=d.metrics||{};
+    dot.className='dot ok';statusText.textContent='متصل به داده واقعی';subtitle.textContent=`آخرین گزارش: ${d.report_date||'ثبت نشده'} | آخرین بارگذاری: ${d.uploaded_at?new Date(d.uploaded_at).toLocaleString('fa-IR'):'ثبت نشده'}`;
+    const selected=scope.value;scope.innerHTML='<option value="">همه مناطق و نواحی</option>'+[...new Set(d.available_scopes||[])].map(x=>`<option ${x===selected?'selected':''}>${esc(x)}</option>`).join('');
+    kpis.innerHTML=metricCards.map(([key,label,type])=>{const raw=m[key]||0;const value=type==='percent'?fa(Number(raw).toFixed(1))+'٪':type==='number'?fa(raw):money(raw);const cls=key==='achievement_percentage'?(Number(raw)>=100?'good':''):'';return `<article class="card"><div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="hint">برگرفته از پایگاه داده اصلی</div></article>`}).join('');
+    const trend=(m.daily_trend||[]).slice(-12),max=Math.max(...trend.map(x=>Number(x.amount||0)),1);chart.innerHTML=trend.length?trend.map(x=>`<div class="bar-wrap"><div class="bar" style="height:${Math.max(3,Number(x.amount||0)*100/max)}%" data-value="${money(x.amount)}"></div><div class="bar-label">${esc(x.period.slice(5))}</div></div>`).join(''):'<div class="empty">داده وصول روزانه ثبت نشده است.</div>';
+    const achievement=Math.max(0,Number(m.achievement_percentage||0));document.getElementById('achievement').textContent=fa(achievement.toFixed(1))+'٪';progress.style.width=Math.min(100,achievement)+'%';targetState.textContent=achievement>=100?'هدف محقق شده':'در مسیر تحقق';monthValue.textContent=money(m.monthly_collection);targetValue.textContent=money(m.monthly_target);remainingValue.textContent=money(m.remaining_to_target);
+    regionsBody.innerHTML=(d.scope_summaries||[]).map(x=>`<tr><td>${esc(x.scope_name)}</td><td>${esc(x.report_date)}</td><td>${fa(x.imported_row_count)}</td><td>${money(x.issued_amount)}</td><td>${money(x.paid_amount)}</td><td>${money(x.overdue_debt)}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">اطلاعات منطقه‌ای موجود نیست.</td></tr>';
+    debtorsBody.innerHTML=(d.top_debtors||[]).slice(0,20).map(x=>`<tr><td>${esc(x.case_number||'-')}</td><td>${esc(x.operator_name||'-')}</td><td>${money(x.overdue_debt)}</td></tr>`).join('')||'<tr><td colspan="3" class="empty">بدهکار معوق ثبت نشده است.</td></tr>';
+  }catch(e){dot.className='dot';statusText.textContent='خطای اتصال';subtitle.textContent=e.message;kpis.innerHTML=`<article class="card error">${esc(e.message)}</article>`}
+}
+filters.addEventListener('submit',e=>{e.preventDefault();load()});load();
+</script>
+</body>
+</html>
