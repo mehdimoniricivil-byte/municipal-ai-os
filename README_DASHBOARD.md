@@ -14,6 +14,7 @@ Open these pages:
 
 - `GET /dashboard` — Persian management dashboard with KPI cards, grouped regional totals, top 20 debtors, latest imports, and data-quality warnings.
 - `GET /dashboard-v2` — new responsive management UI backed by the same production upload engine and `/api/dashboard`; the original dashboard remains available for rollback.
+- `/backend-v1/dashboard/dashboard.html` — full authenticated financial dashboard (expenses, wages, debt and statements) in `services/financial_backend`; collection figures are read from the core `/api/dashboard` contract instead of a duplicate upload pipeline.
 - `GET /taxpayers` — taxpayer search across operator name, phone, identification code, case number, and address.
 - `GET /taxpayers/{id}` — taxpayer detail page with historical snapshot rows.
 

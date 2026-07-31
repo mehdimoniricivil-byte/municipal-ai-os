@@ -1,0 +1,9 @@
+[Unit]
+Description=Shahrdari AI database and storage backup
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/shahrdari-ai/backend-v1
+EnvironmentFile=/opt/shahrdari-ai/backend-v1/.env
+ExecStart=/opt/shahrdari-ai/backend-v1/scripts/backup.sh

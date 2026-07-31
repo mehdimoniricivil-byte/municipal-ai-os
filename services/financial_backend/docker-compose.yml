@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: shahrdari_ai
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shahrdari_ai"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build: .
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - app_storage:/app/storage
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/live')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  backup:
+    build: .
+    env_file:
+      - .env
+    entrypoint: ["/bin/bash", "-lc"]
+    command: ["while true; do /app/scripts/backup.sh; sleep 86400; done"]
+    environment:
+      PGHOST: db
+      PGDATABASE: shahrdari_ai
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      BACKUP_DIR: /backups
+      STORAGE_PATH: /app/storage
+    volumes:
+      - app_storage:/app/storage:ro
+      - backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    profiles: ["scheduled-backup"]
+
+volumes:
+  postgres_data:
+  app_storage:
+  backups:

@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>داشبورد فرماندهی وصول و مالی</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f4f7fb;color:#172033;font-family:Tahoma,Arial,sans-serif}
+.wrap{max-width:1900px;margin:auto;padding:22px}
+h1{margin:0 0 6px;font-size:25px}
+.sub{color:#667085;font-size:13px;margin-bottom:16px}
+.cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}
+.card{background:#fff;border:1px solid #dfe5ee;border-radius:14px;padding:14px}
+.card span{display:block;color:#667085;font-size:12px;margin-bottom:7px}
+.card strong{font-size:18px}
+.panel{background:#fff;border:1px solid #dfe5ee;border-radius:14px;overflow:hidden}
+.head{padding:15px 16px;display:flex;justify-content:space-between;gap:15px;align-items:center}
+.note{font-size:12px;color:#667085}
+.scroller{overflow:auto;border-top:1px solid #dfe5ee}
+table{width:100%;min-width:1700px;border-collapse:collapse;font-size:12px}
+th,td{padding:10px 8px;text-align:center;border-left:1px solid #dfe5ee;border-bottom:1px solid #dfe5ee;white-space:nowrap}
+th{background:#f7f9fc;position:sticky;top:0}
+.area{text-align:right;font-weight:700}
+.total{font-weight:700;background:#eef3ff}
+.delta{direction:ltr;display:inline-block;min-width:118px;padding:5px 8px;border-radius:8px;font-weight:800}
+.pos{background:#e7f7ee;color:#137a44}
+.neg{background:#fdecec;color:#b42318}
+.zero{background:#eef2f7;color:#667085}
+.meta{font-size:11px;color:#667085;margin-top:5px}
+.warn{margin-top:14px;background:#fff5dd;color:#8a5a00;border-radius:12px;padding:12px 14px;font-size:13px}
+@media(max-width:850px){.cards{grid-template-columns:1fr 1fr}}
+
+.wage-section{margin-top:16px;display:grid;grid-template-columns:1fr;gap:16px}
+.wage-panel{background:#fff;border:1px solid #dfe5ee;border-radius:14px;overflow:hidden}
+.wage-panel h2{margin:0;padding:14px 16px;font-size:18px;border-bottom:1px solid #dfe5ee;background:#f8fafc}
+.wage-panel p{margin:0;padding:0 16px 12px;color:#667085;font-size:12px;background:#f8fafc}
+.wage-panel table{min-width:0;width:100%;font-size:13px}
+.wage-panel th,.wage-panel td{padding:11px 10px}
+.wage-panel th{text-align:right;background:#fff;position:static}
+.wage-panel td{text-align:center;direction:ltr;font-variant-numeric:tabular-nums}
+.wage-positive{color:#137a44;font-weight:800}
+.wage-negative{color:#b42318;font-weight:800}
+.wage-rate{display:inline-block;padding:5px 10px;border-radius:999px;background:#e7f7ee;color:#137a44;font-weight:800}
+.wage-amount{color:#137a44;font-weight:800}
+.wage-empty{text-align:center;color:#667085;padding:18px}
+
+
+.debt-panel{margin-top:16px;background:#fff;border:1px solid #dfe5ee;border-radius:14px;overflow:hidden}
+.debt-panel h2{margin:0;padding:14px 16px;font-size:18px;border-bottom:1px solid #dfe5ee;background:#f8fafc}
+.debt-panel p{margin:0;padding:0 16px 12px;color:#667085;font-size:12px;background:#f8fafc}
+.debt-panel table{width:100%;min-width:1050px;border-collapse:collapse;font-size:13px}
+.debt-panel th,.debt-panel td{padding:11px 9px;text-align:center;border-left:1px solid #dfe5ee;border-bottom:1px solid #dfe5ee;white-space:nowrap}
+.debt-panel th{background:#f7f9fc}
+.debt-panel .area{text-align:right;font-weight:700}
+.debt-panel .total{font-weight:800;background:#eef3ff}
+.debt-panel .pending{color:#8a5a00;background:#fff5dd;border-radius:8px;padding:5px 8px;display:inline-block}
+
+
+.coverage-good,.coverage-warn,.coverage-bad{display:inline-block;min-width:82px;padding:5px 9px;border-radius:8px;font-weight:800}
+.coverage-good{background:#e7f7ee;color:#137a44}
+.coverage-warn{background:#fff5dd;color:#8a5a00}
+.coverage-bad{background:#fdecec;color:#b42318}
+.debt-footnote{padding:11px 15px;color:#667085;font-size:11px;background:#fafbfc}
+
+
+.finance-panel{margin-top:16px;background:#fff;border:1px solid #dfe5ee;border-radius:14px;overflow:hidden}
+.finance-head,.finance-detail-head{padding:15px 16px;display:flex;justify-content:space-between;gap:14px;align-items:center}
+.finance-head h2,.finance-detail h3,.expense-entry h3{margin:0 0 6px}
+.finance-head p,.finance-detail p,.expense-entry p{margin:0;color:#667085;font-size:12px}
+.finance-status{background:#eef3ff;color:#2949a3;padding:6px 10px;border-radius:999px;font-size:11px;white-space:nowrap}
+.finance-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:0 16px 16px}
+.finance-card{border:1px solid #dfe5ee;border-radius:12px;padding:12px;background:#fafbfc}
+.finance-card span{display:block;color:#667085;font-size:11px;margin-bottom:6px}
+.finance-card strong{font-size:16px}
+.finance-summary table{min-width:1450px}
+.month-button{border:0;background:transparent;font:inherit;font-weight:700;cursor:pointer;color:inherit;padding:4px 8px;border-radius:7px}
+.month-button:hover,.month-button.selected{background:#e8edff;color:#2949a3}
+.month-cell{cursor:pointer}
+.active-month{background:#f5f7ff;font-weight:700}
+.future-month{color:#98a2b3}
+.finance-detail{border-top:1px solid #dfe5ee}
+.finance-detail table{min-width:850px}
+.fin-positive{color:#137a44;font-weight:800}
+.fin-negative{color:#b42318;font-weight:800}
+.expense-entry{border-top:1px solid #dfe5ee;padding:16px}
+.expense-form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:end;margin-top:12px}
+.expense-form-grid label{font-size:12px;color:#475467}
+.expense-form-grid input,.expense-form-grid select{width:100%;margin-top:5px;border:1px solid #cfd7e3;border-radius:9px;padding:9px;background:#fff;font-family:inherit}
+.expense-description{grid-column:span 2}
+#addExpense{border:0;border-radius:9px;padding:10px 14px;background:#2949a3;color:#fff;font-family:inherit;cursor:pointer}
+.expense-feedback{margin-top:10px;background:#f7f9fc;border-radius:9px;padding:10px;color:#475467;font-size:12px}
+.expense-list{margin-top:10px;border:1px solid #dfe5ee;border-radius:10px}
+.expense-list table{min-width:950px}
+@media(max-width:1050px){.finance-cards{grid-template-columns:1fr 1fr}.expense-form-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:650px){.finance-cards,.expense-form-grid{grid-template-columns:1fr}.expense-description{grid-column:span 1}.finance-head,.finance-detail-head{align-items:flex-start;flex-direction:column}}
+
+
+/* ===== Dark live dashboard theme ===== */
+:root{
+  --bg:#070b16;
+  --bg2:#0b1224;
+  --panel:#101a2e;
+  --panel2:#15213a;
+  --line:rgba(148,163,184,.16);
+  --text:#edf4ff;
+  --muted:#91a4bf;
+  --blue:#38bdf8;
+  --purple:#a78bfa;
+  --green:#34d399;
+  --orange:#fbbf24;
+  --red:#fb7185;
+}
+html{color-scheme:dark}
+body{
+  background:
+    radial-gradient(circle at 10% 0%,rgba(56,189,248,.12),transparent 28%),
+    radial-gradient(circle at 92% 4%,rgba(167,139,250,.12),transparent 28%),
+    linear-gradient(160deg,var(--bg),var(--bg2));
+  color:var(--text);
+  min-height:100vh;
+}
+.wrap{max-width:1900px;padding:24px}
+h1{
+  font-size:27px;
+  background:linear-gradient(90deg,#f8fafc,#7dd3fc,#c4b5fd);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.sub,.note,.meta,.finance-head p,.finance-detail p,.expense-entry p,
+.wage-panel p,.debt-panel p,.debt-footnote{color:var(--muted)}
+.live-bar{
+  display:flex;justify-content:space-between;align-items:center;gap:14px;
+  margin:0 0 16px;padding:11px 14px;border:1px solid var(--line);
+  border-radius:14px;background:rgba(15,23,42,.72);backdrop-filter:blur(12px);
+  box-shadow:0 18px 55px rgba(0,0,0,.24);font-size:12px;color:var(--muted)
+}
+.live-bar>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.live-dot{width:9px;height:9px;border-radius:50%;background:var(--orange);
+  box-shadow:0 0 0 5px rgba(251,191,36,.12)}
+.live-dot.online{background:var(--green);box-shadow:0 0 0 5px rgba(52,211,153,.12)}
+.live-dot.offline{background:var(--red);box-shadow:0 0 0 5px rgba(251,113,133,.12)}
+#refreshDashboard,#addExpense{
+  border:1px solid rgba(125,211,252,.35);border-radius:10px;padding:10px 14px;
+  color:white;background:linear-gradient(135deg,#2563eb,#0891b2);
+  font-family:inherit;font-weight:700;cursor:pointer;transition:.2s ease
+}
+#refreshDashboard:hover,#addExpense:hover{transform:translateY(-1px);filter:brightness(1.12)}
+.cards{grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+.card,.panel,.wage-panel,.debt-panel,.finance-panel{
+  background:linear-gradient(145deg,rgba(21,33,58,.94),rgba(13,22,40,.96));
+  border:1px solid var(--line);box-shadow:0 20px 60px rgba(0,0,0,.26);
+}
+.card{position:relative;overflow:hidden;border-radius:17px;padding:17px}
+.card:before{content:"";position:absolute;right:0;left:0;top:0;height:3px;
+  background:linear-gradient(90deg,var(--blue),var(--purple))}
+.card span,.finance-card span{color:var(--muted)}
+.card strong{font-size:21px;font-variant-numeric:tabular-nums}
+.head,.finance-head,.finance-detail-head{background:rgba(8,15,29,.28)}
+.scroller{border-color:var(--line)}
+table{color:var(--text)}
+th{
+  background:#111c31;color:#b9c8dc;border-color:var(--line);
+  backdrop-filter:blur(8px)
+}
+td{border-color:var(--line)}
+tbody tr{transition:background .15s ease}
+tbody tr:hover{background:rgba(56,189,248,.055)}
+.total{background:rgba(59,130,246,.12)!important}
+.delta.pos,.coverage-good{background:rgba(52,211,153,.14);color:#6ee7b7}
+.delta.neg,.coverage-bad{background:rgba(251,113,133,.14);color:#fda4af}
+.delta.zero{background:rgba(148,163,184,.13);color:#b4c0d1}
+.coverage-warn,.pending{background:rgba(251,191,36,.13)!important;color:#fcd34d!important}
+.wage-panel h2,.debt-panel h2{background:#111c31;border-color:var(--line)}
+.wage-rate{background:rgba(52,211,153,.14);color:#6ee7b7}
+.wage-positive,.wage-amount,.fin-positive{color:#6ee7b7}
+.wage-negative,.fin-negative{color:#fda4af}
+.finance-status{
+  background:rgba(56,189,248,.12);color:#7dd3fc;border:1px solid rgba(56,189,248,.2)
+}
+.finance-cards{gap:12px}
+.finance-card{
+  position:relative;overflow:hidden;background:rgba(7,13,26,.52);
+  border:1px solid var(--line);border-radius:14px;padding:15px
+}
+.finance-card:before{content:"";position:absolute;right:0;top:0;bottom:0;width:4px}
+.finance-card.accent-blue:before{background:var(--blue)}
+.finance-card.accent-purple:before{background:var(--purple)}
+.finance-card.accent-orange:before{background:var(--orange)}
+.finance-card.accent-green:before{background:var(--green)}
+.finance-card strong{font-size:18px}
+.month-button{color:#c6d3e4}
+.month-button:hover,.month-button.selected{background:rgba(56,189,248,.12);color:#7dd3fc}
+.active-month{background:rgba(56,189,248,.08)}
+.future-month{color:#64748b}
+.expense-entry{border-color:var(--line)}
+.expense-form-grid input,.expense-form-grid select{
+  background:#0b1426;color:var(--text);border-color:rgba(148,163,184,.22);
+  outline:none
+}
+.expense-form-grid input:focus,.expense-form-grid select:focus{
+  border-color:var(--blue);box-shadow:0 0 0 3px rgba(56,189,248,.12)
+}
+.expense-form-grid label{color:#b9c8dc}
+.expense-feedback,.expense-list{
+  background:rgba(7,13,26,.46);border-color:var(--line);color:#b9c8dc
+}
+.warn{
+  background:rgba(251,191,36,.1)!important;color:#fde68a!important;
+  border:1px solid rgba(251,191,36,.2)
+}
+.api-error{color:#fda4af}
+.api-ok{color:#6ee7b7}
+@media(max-width:900px){
+  .cards{grid-template-columns:1fr 1fr}
+  .wrap{padding:14px}
+  h1{font-size:22px}
+}
+@media(max-width:560px){
+  .cards{grid-template-columns:1fr}
+  .live-bar{align-items:flex-start;flex-direction:column}
+  #refreshDashboard{width:100%}
+}
+
+</style>
+</head>
+<body>
+<script>
+const BASE_PREFIX = location.pathname.startsWith('/backend-v1/') ? '/backend-v1' : '';
+const ACCESS_TOKEN = localStorage.getItem('access_token');
+if (!ACCESS_TOKEN) location.replace(BASE_PREFIX + '/dashboard/login.html');
+function logoutUser(){
+  const refresh=localStorage.getItem('refresh_token');
+  fetch(BASE_PREFIX+'/api/v1/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({refresh_token:refresh||''})}).finally(()=>{
+    localStorage.clear(); location.replace(BASE_PREFIX+'/dashboard/login.html');
+  });
+}
+</script>
+<div style="position:fixed;left:18px;top:14px;z-index:1000;display:flex;gap:8px"><button onclick="location.href=BASE_PREFIX+'/dashboard/statements.html'" style="background:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:9px;padding:8px 13px;cursor:pointer;font-family:inherit">صورت‌وضعیت‌ها</button><button onclick="logoutUser()" style="background:#233554;color:#e7edf7;border:1px solid #2F415A;border-radius:9px;padding:8px 13px;cursor:pointer;font-family:inherit">خروج</button></div>
+<div class="wrap">
+  <h1>داشبورد فرماندهی وصول کسب‌وپیشه</h1>
+  <div class="sub" id="reportSubtitle">داده زنده از API شهرداری — مبالغ به ریال</div>
+    <div class="live-bar">
+      <div>
+        <span class="live-dot"></span>
+        <strong id="apiStatus">در حال اتصال به API…</strong>
+        <span id="lastRefresh">—</span>
+      </div>
+      <button type="button" id="refreshDashboard">به‌روزرسانی داده‌ها</button>
+    </div>
+
+  <div class="cards">
+    <div class="card"><span>وصول کل امروز</span><strong id="sumToday"></strong></div>
+    <div class="card"><span>وصول کل هفته</span><strong id="sumWeek"></strong></div>
+    <div class="card"><span>وصول کل ماه</span><strong id="sumMonth"></strong></div>
+    <div class="card"><span>اختلاف کل ماه</span><strong id="sumMonthDelta"></strong></div>
+  </div>
+
+  <div class="panel">
+    <div class="head">
+      <div>
+        <strong>جدول لایه اول داشبورد</strong>
+        <div class="note">اختلاف = وصول واقعی منهای هدف؛ مثبت سبز و منفی قرمز</div>
+      </div>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th rowspan="2">محدوده</th>
+            <th colspan="3">امروز</th>
+            <th colspan="3">هفته تا تاریخ گزارش</th>
+            <th colspan="3">ماه تا تاریخ گزارش</th>
+            <th colspan="3">از ابتدای دوره</th>
+          </tr>
+          <tr>
+            <th>وصول</th><th>هدف</th><th>اختلاف</th>
+            <th>وصول</th><th>هدف</th><th>اختلاف</th>
+            <th>وصول</th><th>هدف</th><th>اختلاف</th>
+            <th>وصول</th><th>هدف</th><th>اختلاف</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </div>
+
+
+  <div class="wage-section">
+    <section class="wage-panel">
+      <h2>دستمزد ماه‌های گذشته</h2>
+      <p>پس از پایان هر ماه، وصول واقعی، درصد افزایش یا کاهش نسبت به سال قبل و دستمزد قطعی در این جدول ثبت می‌شود.</p>
+      <div class="scroller">
+        <table>
+          <thead>
+            <tr>
+              <th>ماه</th>
+              <th>مبلغ وصول واقعی</th>
+              <th>درصد افزایش یا کاهش نسبت به سال قبل</th>
+              <th>نرخ دستمزد</th>
+              <th>مبلغ دستمزد</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td colspan="5" class="wage-empty">در تاریخ گزارش ۱۴۰۵/۰۴/۲۳ هنوز ماهی از دوره به‌صورت کامل بسته نشده است.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wage-panel">
+      <h2>دستمزد به‌روز ماه جاری</h2>
+      <p>محاسبه بر اساس وصول واقعی تا تاریخ گزارش و مبلغ متناظر همان تاریخ انجام می‌شود.</p>
+      <div class="scroller">
+        <table>
+          <thead>
+            <tr>
+              <th>ماه جاری</th>
+              <th>تاریخ محاسبه</th>
+              <th>مبلغ وصول متناظر</th>
+              <th>مبلغ وصول به‌روز</th>
+              <th>درصد افزایش یا کاهش</th>
+              <th>نرخ دستمزد به‌روز</th>
+              <th>مبلغ دستمزد به‌روز</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td id="currentMonthLabel">—</td>
+              <td id="wageAsOf">—</td>
+              <td id="wageBase">—</td>
+              <td id="wageActual">—</td>
+              <td id="wageGrowth">—</td>
+              <td><span class="wage-rate" id="wageRate">—</span></td>
+              <td class="wage-amount" id="wageAmount">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+<section class="debt-panel">
+    <h2>فیش‌های پرداخت‌نشده و بدهی مناطق</h2>
+    <p>این جدول مستقیماً از آخرین فایل معتبر هر محدوده در موتور آپلود مرکزی خوانده می‌شود.</p>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th>منطقه</th>
+            <th>تعداد فیش بدهکاران</th>
+            <th>مبلغ فیش بدهکاران</th>
+            <th>بدهی معوق</th>
+            <th>آخرین تاریخ پرداخت</th>
+          </tr>
+        </thead>
+        <tbody id="debtRows">
+          <tr><td colspan="5" class="wage-empty">در حال دریافت داده واقعی…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="debt-footnote">هیچ عدد ثابت یا نمونه‌ای در این جدول نمایش داده نمی‌شود.</div>
+  </section>
+
+
+<section class="finance-panel" id="financePanel">
+  <div class="finance-head">
+    <div>
+      <h2>سود و زیان پروژه ـ تیر تا اسفند ۱۴۰۵</h2>
+      <p>برای مشاهده جزئیات هر ماه روی ستون همان ماه کلیک کنید. مبالغ به ریال است.</p>
+    </div>
+    <span class="finance-status" id="financeAsOf">در حال دریافت داده</span>
+  </div>
+
+  <div class="finance-cards">
+    <div class="finance-card accent-blue"><span>وصول ماه جاری</span><strong id="financeCollection">—</strong></div>
+    <div class="finance-card accent-purple"><span id="financeWageLabel">درآمد کارگزار</span><strong id="financeWage">—</strong></div>
+    <div class="finance-card accent-orange"><span>هزینه ثبت‌شده</span><strong id="financeExpense">—</strong></div>
+    <div class="finance-card accent-green"><span>سود یا زیان پروژه</span><strong id="financeProfit">—</strong></div>
+  </div>
+
+  <div class="scroller finance-summary">
+    <table>
+      <thead>
+        <tr>
+          <th>عنوان</th>
+          <th><button type="button" class="month-button" data-month="تیر">تیر</button></th><th><button type="button" class="month-button" data-month="مرداد">مرداد</button></th><th><button type="button" class="month-button" data-month="شهریور">شهریور</button></th><th><button type="button" class="month-button" data-month="مهر">مهر</button></th><th><button type="button" class="month-button" data-month="آبان">آبان</button></th><th><button type="button" class="month-button" data-month="آذر">آذر</button></th><th><button type="button" class="month-button" data-month="دی">دی</button></th><th><button type="button" class="month-button" data-month="بهمن">بهمن</button></th><th><button type="button" class="month-button" data-month="اسفند">اسفند</button></th>
+          <th>جمع دوره</th>
+        </tr>
+      </thead>
+      <tbody id="financeSummaryBody">
+        <tr><td colspan="11" class="wage-empty">در حال دریافت وصول و هزینه واقعی…</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="finance-detail" id="monthDetail">
+    <div class="finance-detail-head">
+      <div>
+        <h3 id="detailTitle">جزئیات ماه جاری</h3>
+        <p id="detailNote">در حال دریافت اطلاعات واقعی…</p>
+      </div>
+      <span class="finance-status" id="detailStatus">ماه جاری</span>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr>
+            <th>منطقه</th>
+            <th>وصول</th>
+            <th>درآمد کارگزار</th>
+            <th>هزینه منطقه</th>
+            <th>سود یا زیان</th>
+          </tr>
+        </thead>
+        <tbody id="detailBody">
+          <tr><td colspan="5" class="wage-empty">در حال دریافت داده واقعی…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="expense-entry">
+    <div>
+      <h3>فرم ورود هزینه</h3>
+      <p>هر هزینه به‌صورت یک ردیف ثبت می‌شود. هزینه مستقیم به منطقه انتخاب‌شده و هزینه مشترک به کل پروژه تعلق می‌گیرد.</p>
+    </div>
+    <div class="expense-form-grid">
+      <label>ماه
+        <select id="expenseMonth">
+          <option value="4" selected>تیر ۱۴۰۵</option><option value="5">مرداد ۱۴۰۵</option><option value="6">شهریور ۱۴۰۵</option><option value="7">مهر ۱۴۰۵</option><option value="8">آبان ۱۴۰۵</option><option value="9">آذر ۱۴۰۵</option><option value="10">دی ۱۴۰۵</option><option value="11">بهمن ۱۴۰۵</option><option value="12">اسفند ۱۴۰۵</option>
+        </select>
+      </label>
+      <label>تاریخ هزینه
+        <input id="expenseDate" type="text" placeholder="مثلاً ۱۴۰۵/۰۵/۱۰">
+      </label>
+      <label>نوع هزینه
+        <select id="expenseType">
+          <option value="direct">مستقیم منطقه</option>
+          <option value="shared">مشترک پروژه</option>
+        </select>
+      </label>
+      <label>منطقه
+        <select id="expenseRegion">
+          <option value="منطقه ۱">منطقه ۱</option><option value="منطقه ۲">منطقه ۲</option><option value="ناحیه منطقه ۲">ناحیه منطقه ۲</option><option value="منطقه ۳">منطقه ۳</option><option value="ناحیه منطقه ۳">ناحیه منطقه ۳</option>
+          <option value="کل پروژه">کل پروژه</option>
+        </select>
+      </label>
+      <label>سرفصل هزینه
+        <select id="expenseCategory">
+          <option>حقوق و دستمزد</option>
+          <option>بیمه</option>
+          <option>اجاره و پشتیبانی</option>
+          <option>حمل‌ونقل</option>
+          <option>سامانه و تجهیزات</option>
+          <option>هزینه اداری</option>
+          <option>سایر</option>
+        </select>
+      </label>
+      <label>مبلغ هزینه ـ ریال
+        <input id="expenseAmount" type="number" min="0" step="1000" placeholder="مبلغ را وارد کنید">
+      </label>
+      <label class="expense-description">شرح
+        <input id="expenseDescription" type="text" placeholder="شرح هزینه">
+      </label>
+      <button id="addExpense" type="button">ثبت هزینه</button>
+    </div>
+    <div id="expenseFeedback" class="expense-feedback" aria-live="polite">
+      هزینه‌های ثبت‌شده از پایگاه داده خوانده می‌شوند.
+    </div>
+    <div class="scroller expense-list">
+      <table>
+        <thead><tr><th>ماه</th><th>تاریخ</th><th>نوع</th><th>منطقه</th><th>سرفصل</th><th>شرح</th><th>مبلغ</th></tr></thead>
+        <tbody id="expenseRows">
+          <tr><td colspan="7" class="wage-empty">در حال دریافت هزینه‌های ثبت‌شده…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+  <div class="warn" id="dataQualityNote">کنترل صحت پس از دریافت داده‌های واقعی انجام می‌شود.</div>
+
+</div>
+
+
+<script>
+const currentUser=JSON.parse(localStorage.getItem('current_user')||'null');if(currentUser?.role==='expert')location.replace((location.pathname.startsWith('/backend-v1/')?'/backend-v1':'')+'/dashboard/upload.html');
+const API_BASE = window.SHahrdariApiBase || BASE_PREFIX + "/api/v1";
+const CORE_DASHBOARD_URL = "/core-api/api/dashboard";
+let YEAR = 1405;
+let MONTH = 4;
+let coreDashboardData = null;
+let WAGE_RATE = 0;
+const MONTH_NAMES = {1:"فروردین",2:"اردیبهشت",3:"خرداد",4:"تیر",5:"مرداد",6:"شهریور",7:"مهر",8:"آبان",9:"آذر",10:"دی",11:"بهمن",12:"اسفند"};
+
+const regions = [
+  {region_id:1,id:"r1",name:"منطقه ۱",aliases:["منطقه1","منطقهیک","r1"]},
+  {region_id:2,id:"r2",name:"منطقه ۲",aliases:["منطقه2","منطقهدو","r2"]},
+  {region_id:3,id:"a2",name:"ناحیه منطقه ۲",aliases:["ناحیه2","ناحیهمنطقه2","a2"]},
+  {region_id:4,id:"r3",name:"منطقه ۳",aliases:["منطقه3","منطقهسه","r3"]},
+  {region_id:5,id:"a3",name:"ناحیه منطقه ۳",aliases:["ناحیه3","ناحیهمنطقه3","a3"]}
+];
+
+/* این اهداف فقط مربوط به تیر ۱۴۰۵ هستند و در ماه دیگری نمایش داده نمی‌شوند. */
+const targets = {
+  r1:{today:699799167,week:2799196667,month:12421435208,period:12421435208},
+  r2:{today:275877667,week:1103510667,month:4896828583,period:4896828583},
+  a2:{today:307796083,week:1231184333,month:5463380479,period:5463380479},
+  r3:{today:335739625,week:1342958500,month:5959378344,period:5959378344},
+  a3:{today:73335333,week:293341333,month:1301702167,period:1301702167}
+};
+
+const nf = new Intl.NumberFormat("fa-IR");
+const faDigits = s => String(s).replace(/[0-9]/g, d => "۰۱۲۳۴۵۶۷۸۹"[d]);
+const money = value => nf.format(Math.round(Number(value || 0)));
+const formatIRR = value => `${money(value)} ریال`;
+const latinDigits = s => String(s ?? "").replace(/[۰-۹]/g,d=>"۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+const scopeKey = s => latinDigits(s).toLowerCase().replace(/[\s_\-‌]/g,"").replace(/ي/g,"ی").replace(/ك/g,"ک");
+const regionForScope = name => {const key=scopeKey(name);return regions.find(region=>region.aliases.includes(key));};
+
+function setApiState(kind, text) {
+  const dot = document.querySelector(".live-dot");
+  dot.classList.remove("online","offline");
+  if (kind) dot.classList.add(kind);
+  document.getElementById("apiStatus").textContent = text;
+}
+
+async function getJSON(url, options={}) {
+  const response = await fetch(url, {
+    headers: {"Accept":"application/json", "Authorization":`Bearer ${localStorage.getItem("access_token")||""}`, ...(options.headers || {})},
+    ...options
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    if(response.status===401){localStorage.clear();location.replace(BASE_PREFIX+"/dashboard/login.html");}
+    throw new Error(`${response.status}: ${detail || "خطای نامشخص"}`);
+  }
+  return response.json();
+}
+
+function deltaHTML(actual, target) {
+  if (actual === null || actual === undefined) {
+    return '<span class="delta zero">—</span>';
+  }
+  const delta = Number(actual) - Number(target || 0);
+  const cls = delta > 0 ? "pos" : delta < 0 ? "neg" : "zero";
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  return `<span class="delta ${cls}">${sign}${money(Math.abs(delta))}</span>`;
+}
+
+function cells(actual, target) {
+  if (target === null || target === undefined) {
+    const actualText = actual === null || actual === undefined ? "—" : money(actual);
+    return `<td>${actualText}</td><td>—</td><td><span class="delta zero">هدف ثبت نشده</span></td>`;
+  }
+  if (actual === null || actual === undefined) {
+    return `<td>—</td><td>${money(target)}</td><td>${deltaHTML(null,target)}</td>`;
+  }
+  return `<td>${money(actual)}</td><td>${money(target)}</td><td>${deltaHTML(actual,target)}</td>`;
+}
+
+function renderMainTable(actuals) {
+  let body = "";
+  let monthTotal = 0;
+  let monthTargetTotal = 0;
+  const hasApprovedTargets = YEAR === 1405 && MONTH === 4;
+
+  for (const region of regions) {
+    const a = actuals[region.id] || {today:null,week:null,month:0,period:0,maxdate:null,status:"missing"};
+    const t = hasApprovedTargets ? targets[region.id] : {today:null,week:null,month:null,period:null};
+    monthTotal += Number(a.month || 0);
+    if (t.month !== null) monthTargetTotal += Number(t.month || 0);
+
+    body += `<tr>
+      <td class="area">${region.name}
+        <div class="meta">${a.status === "available" ? `آخرین داده: ${a.maxdate || "نامشخص"}` : "فاقد گزارش"}</div>
+      </td>
+      ${cells(a.today,t.today)}
+      ${cells(a.week,t.week)}
+      ${cells(a.month,t.month)}
+      ${cells(a.period,t.period)}
+    </tr>`;
+  }
+
+  const totalTargets = {
+    today:hasApprovedTargets ? regions.reduce((s,r)=>s+targets[r.id].today,0) : null,
+    week:hasApprovedTargets ? regions.reduce((s,r)=>s+targets[r.id].week,0) : null,
+    month:hasApprovedTargets ? monthTargetTotal : null,
+    period:hasApprovedTargets ? regions.reduce((s,r)=>s+targets[r.id].period,0) : null
+  };
+
+  body += `<tr class="total"><td class="area">کل مناطق</td>
+    ${cells(null,totalTargets.today)}
+    ${cells(null,totalTargets.week)}
+    ${cells(monthTotal,totalTargets.month)}
+    ${cells(monthTotal,totalTargets.period)}
+  </tr>`;
+
+  document.getElementById("rows").innerHTML = body;
+  document.getElementById("sumToday").textContent = "در انتظار API روزانه";
+  document.getElementById("sumWeek").textContent = "در انتظار API روزانه";
+  document.getElementById("sumMonth").textContent = money(monthTotal);
+  document.getElementById("sumMonthDelta").innerHTML = hasApprovedTargets
+    ? deltaHTML(monthTotal,monthTargetTotal)
+    : '<span class="delta zero">هدف این ماه ثبت نشده</span>';
+  return {monthTotal, monthTargetTotal};
+}
+
+async function loadCollections() {
+  const data = await getJSON(CORE_DASHBOARD_URL);
+  coreDashboardData = data;
+  const latestPaymentDate = latinDigits(data.metrics?.latest_payment_date || "");
+  const dateParts = latestPaymentDate.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if (dateParts) {
+    YEAR = Number(dateParts[1]);
+    MONTH = Number(dateParts[2]);
+    document.getElementById("expenseMonth").value = String(MONTH);
+    document.getElementById("expenseDate").value = faDigits(latestPaymentDate);
+    document.querySelectorAll("#expenseMonth option").forEach(option => {
+      option.textContent = `${MONTH_NAMES[Number(option.value)]} ${faDigits(YEAR)}`;
+    });
+  }
+  const actuals = {};
+  for (const region of regions) {
+    actuals[region.id] = {today:null,week:null,month:0,period:0,maxdate:null,status:"missing"};
+  }
+  for (const row of (data.scope_summaries || [])) {
+    const region = regionForScope(row.scope_name);
+    if (!region) continue;
+    actuals[region.id] = {
+      today:Number(row.latest_day_collection || 0),
+      week:Number(row.weekly_collection || 0),
+      month:Number(row.monthly_collection || 0),
+      period:Number(row.total_collection || 0),
+      maxdate:faDigits(row.latest_payment_date || row.report_date || ""),
+      status:"available"
+    };
+  }
+  return actuals;
+}
+
+async function loadFinancialSettings() {
+  const settings = await getJSON(`${API_BASE}/finance/settings`);
+  WAGE_RATE = Number(settings.dashboard_wage_rate_percent || 0) / 100;
+  const rateText = `${faDigits((WAGE_RATE*100).toFixed(2).replace(/\.00$/, ""))}٪`;
+  document.getElementById("wageRate").textContent = rateText;
+  document.getElementById("financeWageLabel").textContent = `درآمد کارگزار ـ نرخ ${rateText}`;
+}
+
+function renderDebt(data) {
+  const rows = (data.scope_summaries || []).map(row => {
+    const region = regionForScope(row.scope_name);
+    return `<tr>
+      <td class="area">${region?.name || row.scope_name || "—"}<div class="meta">آخرین فایل: ${faDigits(row.report_date || "—")}</div></td>
+      <td>${money(row.unpaid_bill_count || 0)}</td>
+      <td>${formatIRR(row.unpaid_bill_amount || 0)}</td>
+      <td>${formatIRR(row.overdue_debt || 0)}</td>
+      <td>${faDigits(row.latest_payment_date || "—")}</td>
+    </tr>`;
+  });
+  document.getElementById("debtRows").innerHTML = rows.join("") ||
+    '<tr><td colspan="5" class="wage-empty">فایل معتبر محدوده‌ای موجود نیست.</td></tr>';
+}
+
+async function loadExpenses() {
+  try {
+    const rows = await getJSON(`${API_BASE}/expenses?year=${YEAR}&month=${MONTH}`);
+    return Array.isArray(rows) ? rows.filter(r =>
+      Number(r.persian_year) === YEAR && Number(r.persian_month) === MONTH
+    ) : [];
+  } catch (error) {
+    console.warn("Expenses endpoint unavailable:", error);
+    return [];
+  }
+}
+
+async function loadPeriodExpenses() {
+  const result = {};
+  await Promise.all(Array.from({length:9},(_,index)=>index+4).map(async month => {
+    const rows = await getJSON(`${API_BASE}/expenses?year=${YEAR}&month=${month}`);
+    result[month] = Array.isArray(rows) ? rows : [];
+  }));
+  return result;
+}
+
+function renderExpenseRows(expenses) {
+  const tbody = document.getElementById("expenseRows");
+  if (!expenses.length) {
+    tbody.innerHTML = `<tr><td colspan="7" class="wage-empty">هنوز هزینه‌ای برای ${MONTH_NAMES[MONTH] || MONTH} ${faDigits(YEAR)} ثبت نشده است.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = expenses.map(row => {
+    const region = regions.find(r => r.region_id === Number(row.region_id));
+    const scopeText = row.expense_type === "shared" ? "مشترک پروژه" : "مستقیم منطقه";
+    return `<tr>
+      <td>${MONTH_NAMES[Number(row.persian_month)] || row.persian_month}</td>
+      <td>${faDigits(row.expense_date_persian || "—")}</td>
+      <td>${scopeText}</td>
+      <td>${row.expense_type === "shared" ? "کل پروژه" : (region?.name || "—")}</td>
+      <td>${row.category || "—"}</td>
+      <td>${row.description || "—"}</td>
+      <td>${formatIRR(row.amount_irr)}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderFinance(actuals, expenses) {
+  const collection = regions.reduce((s,r)=>s+Number(actuals[r.id]?.month || 0),0);
+  const wage = Math.round(collection * WAGE_RATE);
+  const expense = expenses.reduce((s,r)=>s+Number(r.amount_irr || 0),0);
+  const profit = wage - expense;
+
+  document.getElementById("financeCollection").textContent = formatIRR(collection);
+  document.getElementById("financeWage").textContent = formatIRR(wage);
+  document.getElementById("financeExpense").textContent = formatIRR(expense);
+  const profitEl = document.getElementById("financeProfit");
+  profitEl.textContent = formatIRR(profit);
+  profitEl.className = profit >= 0 ? "fin-positive" : "fin-negative";
+
+  const latestDate = regions.map(r=>actuals[r.id]?.maxdate).filter(Boolean).sort().at(-1) || "—";
+  document.getElementById("wageAsOf").textContent = latestDate;
+  document.getElementById("currentMonthLabel").textContent = `${MONTH_NAMES[MONTH] || MONTH} ${faDigits(YEAR)}`;
+  document.getElementById("wageBase").textContent = "پس از اتصال مبنای ۱۴۰۴";
+  document.getElementById("wageActual").textContent = formatIRR(collection);
+  document.getElementById("wageGrowth").textContent = "در انتظار مبلغ متناظر ۱۴۰۴";
+  document.getElementById("wageAmount").textContent = formatIRR(wage);
+
+  const allocated = regions.map(r => {
+    const regionCollection = Number(actuals[r.id]?.month || 0);
+    const regionWage = Math.round(regionCollection * WAGE_RATE);
+    const regionCost = collection > 0 ? Math.round(expense * regionCollection / collection) : 0;
+    return {name:r.name,collection:regionCollection,wage:regionWage,cost:regionCost,profit:regionWage-regionCost};
+  });
+
+  let detail = allocated.map(r => `<tr>
+    <td class="area">${r.name}</td>
+    <td>${formatIRR(r.collection)}</td>
+    <td>${formatIRR(r.wage)}</td>
+    <td>${formatIRR(r.cost)}</td>
+    <td class="${r.profit >= 0 ? "fin-positive" : "fin-negative"}">${formatIRR(r.profit)}</td>
+  </tr>`).join("");
+
+  detail += `<tr class="total">
+    <td class="area">کل پروژه</td>
+    <td>${formatIRR(collection)}</td>
+    <td>${formatIRR(wage)}</td>
+    <td>${formatIRR(expense)}</td>
+    <td class="${profit >= 0 ? "fin-positive" : "fin-negative"}">${formatIRR(profit)}</td>
+  </tr>`;
+  document.getElementById("detailBody").innerHTML = detail;
+  document.getElementById("detailTitle").textContent = `جزئیات ${MONTH_NAMES[MONTH] || MONTH} ${faDigits(YEAR)}`;
+  document.getElementById("detailNote").textContent = expense
+    ? "هزینه‌های مشترک متناسب با سهم وصول هر محدوده سرشکن شده‌اند."
+    : "هنوز هزینه‌ای ثبت نشده است.";
+}
+
+function renderFinanceSummary(data, expensesByMonth) {
+  const collections = {};
+  for (const item of (data.metrics?.monthly_trend || [])) {
+    const match = latinDigits(item.period).match(/^(\d{4})\/(\d{1,2})$/);
+    if (match && Number(match[1]) === YEAR) collections[Number(match[2])] = Number(item.amount || 0);
+  }
+  const months = Array.from({length:9},(_,index)=>index+4);
+  const expenses = Object.fromEntries(months.map(month => [month,(expensesByMonth[month] || []).reduce((sum,row)=>sum+Number(row.amount_irr || 0),0)]));
+  const wages = Object.fromEntries(months.map(month => [month,Math.round(Number(collections[month] || 0)*WAGE_RATE)]));
+  const profits = Object.fromEntries(months.map(month => [month,wages[month]-expenses[month]]));
+  const row = (label,values,formatter=formatIRR) => {
+    const cells = months.map(month => `<td class="month-cell ${month===MONTH?'active-month':''}" data-month="${MONTH_NAMES[month]}">${values[month] ? formatter(values[month]) : "—"}</td>`).join("");
+    const total = months.reduce((sum,month)=>sum+Number(values[month] || 0),0);
+    return `<tr><td class="area">${label}</td>${cells}<td>${formatter(total)}</td></tr>`;
+  };
+  document.getElementById("financeSummaryBody").innerHTML =
+    row("وصول واقعی",collections) + row("درآمد کارگزار",wages) + row("هزینه پروژه",expenses) + row("سود یا زیان",profits);
+  document.getElementById("financeAsOf").textContent = `آخرین داده: ${faDigits(data.metrics?.latest_payment_date || data.report_date || "—")}`;
+}
+
+async function submitExpense() {
+  const feedback = document.getElementById("expenseFeedback");
+  const type = document.getElementById("expenseType").value;
+  const regionName = document.getElementById("expenseRegion").value;
+  const region = regions.find(r => r.name === regionName);
+  const amount = Number(document.getElementById("expenseAmount").value);
+  const dateRaw = document.getElementById("expenseDate").value.trim()
+    .replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d));
+
+  if (!dateRaw || !amount || amount <= 0) {
+    feedback.textContent = "تاریخ و مبلغ معتبر وارد کنید.";
+    feedback.className = "expense-feedback api-error";
+    return;
+  }
+
+  const payload = {
+    persian_year:YEAR,
+    persian_month:Number(document.getElementById("expenseMonth").value || MONTH),
+    expense_date_persian:dateRaw,
+    expense_type:type,
+    region_id:type === "shared" ? null : (region?.region_id || null),
+    category:document.getElementById("expenseCategory").value,
+    description:document.getElementById("expenseDescription").value.trim() || null,
+    amount_irr:amount
+  };
+
+  try {
+    feedback.textContent = "در حال ثبت هزینه…";
+    feedback.className = "expense-feedback";
+    await getJSON(`${API_BASE}/expenses`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    feedback.textContent = `${formatIRR(amount)} با موفقیت در پایگاه داده ثبت شد.`;
+    feedback.className = "expense-feedback api-ok";
+    await refreshDashboard();
+  } catch (error) {
+    feedback.textContent = `ثبت هزینه ناموفق بود: ${error.message}`;
+    feedback.className = "expense-feedback api-error";
+  }
+}
+
+function showFinanceMonth(month) {
+  document.querySelectorAll(".month-button").forEach(b =>
+    b.classList.toggle("selected",b.dataset.month === month)
+  );
+  if (month !== MONTH_NAMES[MONTH]) {
+    document.getElementById("detailTitle").textContent = `جزئیات ${month} ۱۴۰۵`;
+    document.getElementById("detailNote").textContent = "داده این ماه هنوز ثبت نشده است.";
+    document.getElementById("detailStatus").textContent = "در انتظار داده";
+    document.getElementById("detailBody").innerHTML =
+      `<tr><td colspan="5" class="pending">اطلاعات این ماه پس از ثبت وصول و هزینه نمایش داده می‌شود.</td></tr>`;
+  }
+}
+
+async function refreshDashboard() {
+  const button = document.getElementById("refreshDashboard");
+  button.disabled = true;
+  setApiState("", "در حال دریافت داده‌ها…");
+  try {
+    await loadFinancialSettings();
+    const actuals = await loadCollections();
+    const expensesByMonth = await loadPeriodExpenses();
+    const expenses = expensesByMonth[MONTH] || [];
+    renderMainTable(actuals);
+    renderDebt(coreDashboardData);
+    renderExpenseRows(expenses);
+    renderFinance(actuals,expenses);
+    renderFinanceSummary(coreDashboardData,expensesByMonth);
+    const latestDate = regions.map(r=>actuals[r.id]?.maxdate).filter(Boolean).sort().at(-1) || "نامشخص";
+    document.getElementById("reportSubtitle").textContent =
+      `گزارش ${MONTH_NAMES[MONTH] || MONTH} ${faDigits(YEAR)} — آخرین داده: ${latestDate} — مبالغ به ریال`;
+    document.getElementById("lastRefresh").textContent =
+      `آخرین به‌روزرسانی مرورگر: ${new Date().toLocaleTimeString("fa-IR",{hour:"2-digit",minute:"2-digit"})}`;
+    const regionSum = (coreDashboardData.scope_summaries || []).reduce((sum,row)=>sum+Number(row.monthly_collection || 0),0);
+    const total = Number(coreDashboardData.metrics?.monthly_collection || 0);
+    document.getElementById("dataQualityNote").textContent = regionSum === total
+      ? `کنترل صحت موفق: جمع مناطق با وصول ماه (${formatIRR(total)}) برابر است.`
+      : `هشدار کنترل صحت: جمع مناطق ${formatIRR(regionSum)} و جمع کل ${formatIRR(total)} است.`;
+    setApiState("online","اتصال API برقرار است");
+  } catch (error) {
+    console.error(error);
+    setApiState("offline","خطا در دریافت اطلاعات");
+    document.getElementById("lastRefresh").textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.querySelectorAll(".month-button,.month-cell").forEach(el =>
+  el.addEventListener("click",()=>showFinanceMonth(el.dataset.month))
+);
+document.getElementById("refreshDashboard").addEventListener("click",refreshDashboard);
+document.getElementById("addExpense").addEventListener("click",submitExpense);
+document.getElementById("expenseType").addEventListener("change",event => {
+  const region = document.getElementById("expenseRegion");
+  if (event.target.value === "shared") {
+    region.value = "کل پروژه";
+    region.disabled = true;
+  } else {
+    region.disabled = false;
+    if (region.value === "کل پروژه") region.selectedIndex = 0;
+  }
+});
+
+refreshDashboard();
+</script>
+
+</body>
+</html>
