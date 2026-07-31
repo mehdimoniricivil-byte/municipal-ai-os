@@ -23,7 +23,22 @@ STATIC_DIR = Path(__file__).with_name("static")
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Municipality Excel Upload")
+app = FastAPI(
+    title="Municipality Excel Upload",
+    root_path="/core-api",
+    docs_url=None,
+)
+
+
+from fastapi.openapi.docs import get_swagger_ui_html
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_docs():
+    return get_swagger_ui_html(
+        openapi_url="/core-api/openapi.json",
+        title=f"{app.title} - Swagger UI",
+    )
 
 
 def _page(title: str, body: str, status_code: int = 200) -> HTMLResponse:
