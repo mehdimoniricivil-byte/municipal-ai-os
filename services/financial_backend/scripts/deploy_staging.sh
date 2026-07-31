@@ -95,6 +95,8 @@ GRANT ALL PRIVILEGES ON DATABASE ${DB_NAME} TO ${DB_ROLE};
 SQL
 
 cd "$SERVICE_DIR"
+mkdir -p "$SERVICE_DIR/storage"
+chmod 700 "$SERVICE_DIR/storage"
 COMPOSE=(sudo docker compose --project-name "$COMPOSE_PROJECT" --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 "${COMPOSE[@]}" build api
 "${COMPOSE[@]}" run --rm --no-deps api alembic upgrade head

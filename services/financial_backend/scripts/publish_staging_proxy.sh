@@ -11,7 +11,7 @@ curl -fsS http://127.0.0.1:8002/api/v1/live >/dev/null || {
   exit 1
 }
 
-NGINX_MATCH="$(sudo grep -RIl 'location /backend-v1/' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | head -n 1)"
+NGINX_MATCH="$(sudo grep -RIl 'location /backend-v1/' /etc/nginx/sites-enabled /etc/nginx/conf.d 2>/dev/null | sed -n '1p')"
 [[ -n "$NGINX_MATCH" ]] || {
   echo "ERROR: active /backend-v1/ Nginx configuration was not found" >&2
   exit 1
