@@ -19,6 +19,7 @@ from sqlalchemy import text
 from .etl.engine import import_excel, make_engine
 
 IMPORT_DIR = Path("data/imports")
+STATIC_DIR = Path(__file__).with_name("static")
 
 logger = logging.getLogger(__name__)
 
@@ -858,6 +859,20 @@ def dashboard_api(
         region=region,
         district=district,
     )
+
+
+@app.get("/dashboard-v2", response_class=HTMLResponse)
+def dashboard_v2() -> HTMLResponse:
+    """Serve the new management UI while keeping the proven v1 data engine.
+
+    The page intentionally consumes ``/api/dashboard`` instead of introducing
+    a second schema or upload pipeline.  This makes the production database the
+    single source of truth and keeps ``/dashboard`` available as a rollback.
+    """
+    page = STATIC_DIR / "dashboard_v2.html"
+    if not page.is_file():
+        raise HTTPException(status_code=503, detail="فایل داشبورد جدید در دسترس نیست")
+    return HTMLResponse(page.read_text(encoding="utf-8"))
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard(
