@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     auto_create_schema: bool = True
     dashboard_wage_rate_percent: float = 6.0
+    root_path: str = "/backend-v1"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 

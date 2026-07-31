@@ -48,6 +48,20 @@ pytest -q
 python -m compileall -q app
 ```
 
+## استقرار ایزوله staging روی سرور موجود
+
+اسکریپت staging یک دیتابیس و نقش جدا در کانتینر PostgreSQL موجود می‌سازد،
+سرویس را فقط روی `127.0.0.1:8002` بالا می‌آورد و به نسخه فعال پورت ۸۰۰۱
+دست نمی‌زند. رمزهای تصادفی فقط روی خود سرور ذخیره می‌شوند.
+
+```bash
+./scripts/deploy_staging.sh
+./scripts/publish_staging_proxy.sh
+```
+
+مسیر عمومی آزمایش:
+`/backend-v1-staging/dashboard/login.html`
+
 ## هشدار بهره‌برداری
 
 تا پایان تست پذیرش در محیط staging، فایل واقعی سازمانی وارد نشود. رمز اولیه و

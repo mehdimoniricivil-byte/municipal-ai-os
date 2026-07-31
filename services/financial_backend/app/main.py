@@ -13,7 +13,7 @@ app = FastAPI(
     title=settings.app_name,
     version="0.5.0",
     description="سامانه وصول، هزینه، صورت‌وضعیت و زیرساخت انتشار آزمایشی",
-    root_path="/backend-v1",
+    root_path=settings.root_path.rstrip("/"),
 )
 
 

@@ -3,10 +3,11 @@ services:
     build: .
     container_name: shahrdari-financial-staging
     env_file:
-      - .env
+      - .env.staging
     environment:
       APP_ENV: staging
       AUTO_CREATE_SCHEMA: "false"
+      ROOT_PATH: /backend-v1-staging
       STORAGE_PATH: /app/storage
     ports:
       - "127.0.0.1:8002:8000"

@@ -14,7 +14,7 @@
 <section class="card"><h3>سوابق بارگذاری من</h3><div class="table-wrap"><table><thead><tr><th>شناسه</th><th>فایل</th><th>دوره</th><th>ردیف</th><th>مبلغ</th><th>وضعیت</th></tr></thead><tbody id="history"></tbody></table></div></section>
 </main>
 <script>
-const BASE=(location.pathname.startsWith('/backend-v1/')?'/backend-v1':'');const API=BASE+'/api/v1';const token=localStorage.getItem('access_token');let current=JSON.parse(localStorage.getItem('current_user')||'null');let uploadId=null;
+const BASE=location.pathname.includes('/dashboard/')?location.pathname.split('/dashboard/')[0]:'';const API=BASE+'/api/v1';const token=localStorage.getItem('access_token');let current=JSON.parse(localStorage.getItem('current_user')||'null');let uploadId=null;
 if(!token) location.replace(BASE+'/dashboard/login.html');
 const digits=n=>new Intl.NumberFormat('fa-IR').format(Number(n||0));
 for(let i=1;i<=12;i++) month.add(new Option(digits(i),i));

@@ -225,7 +225,7 @@ tbody tr:hover{background:rgba(56,189,248,.055)}
 </head>
 <body>
 <script>
-const BASE_PREFIX = location.pathname.startsWith('/backend-v1/') ? '/backend-v1' : '';
+const BASE_PREFIX = location.pathname.includes('/dashboard/') ? location.pathname.split('/dashboard/')[0] : '';
 const ACCESS_TOKEN = localStorage.getItem('access_token');
 if (!ACCESS_TOKEN) location.replace(BASE_PREFIX + '/dashboard/login.html');
 function logoutUser(){
@@ -485,7 +485,7 @@ function logoutUser(){
 
 
 <script>
-const currentUser=JSON.parse(localStorage.getItem('current_user')||'null');if(currentUser?.role==='expert')location.replace((location.pathname.startsWith('/backend-v1/')?'/backend-v1':'')+'/dashboard/upload.html');
+const currentUser=JSON.parse(localStorage.getItem('current_user')||'null');if(currentUser?.role==='expert')location.replace(BASE_PREFIX+'/dashboard/upload.html');
 const API_BASE = window.SHahrdariApiBase || BASE_PREFIX + "/api/v1";
 const CORE_DASHBOARD_URL = "/core-api/api/dashboard";
 let YEAR = 1405;

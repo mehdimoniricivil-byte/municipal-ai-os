@@ -20,7 +20,7 @@ def test_financial_dashboard_reads_collections_from_core_api():
 def test_financial_pages_respect_backend_proxy_prefix():
     statements = (STATIC_DIR / "statements.html").read_text(encoding="utf-8")
 
-    assert "location.pathname.startsWith('/backend-v1/')" in statements
+    assert "location.pathname.split('/dashboard/')[0]" in statements
     assert "const API=BASE+'/api/v1'" in statements
     assert app.root_path == "/backend-v1"
     assert root().headers["location"] == "dashboard/login.html"
