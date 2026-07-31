@@ -495,11 +495,11 @@ let WAGE_RATE = 0;
 const MONTH_NAMES = {1:"فروردین",2:"اردیبهشت",3:"خرداد",4:"تیر",5:"مرداد",6:"شهریور",7:"مهر",8:"آبان",9:"آذر",10:"دی",11:"بهمن",12:"اسفند"};
 
 const regions = [
-  {region_id:1,id:"r1",name:"منطقه ۱",aliases:["منطقه1","منطقهیک","r1"]},
-  {region_id:2,id:"r2",name:"منطقه ۲",aliases:["منطقه2","منطقهدو","r2"]},
-  {region_id:3,id:"a2",name:"ناحیه منطقه ۲",aliases:["ناحیه2","ناحیهمنطقه2","a2"]},
-  {region_id:4,id:"r3",name:"منطقه ۳",aliases:["منطقه3","منطقهسه","r3"]},
-  {region_id:5,id:"a3",name:"ناحیه منطقه ۳",aliases:["ناحیه3","ناحیهمنطقه3","a3"]}
+  {region_id:1,id:"r1",name:"منطقه ۱",aliases:["منطقه1","منطقهیک","region1","r1"]},
+  {region_id:2,id:"r2",name:"منطقه ۲",aliases:["منطقه2","منطقهدو","region2","r2"]},
+  {region_id:3,id:"a2",name:"ناحیه منطقه ۲",aliases:["ناحیه2","ناحیهدو","ناحیهمنطقه2","ناحیهمنطقهدو","ناحیهدومنطقهدو","منطقه2ناحیه2","منطقهدوناحیهدو","a2"]},
+  {region_id:5,id:"r3",name:"منطقه ۳",aliases:["منطقه3","منطقهسه","region3","r3"]},
+  {region_id:4,id:"a3",name:"ناحیه منطقه ۳",aliases:["ناحیه3","ناحیهسه","ناحیهمنطقه3","ناحیهمنطقهسه","ناحیهسهمنطقهسه","منطقه3ناحیه3","منطقهسهناحیهسه","a3"]}
 ];
 
 /* این اهداف فقط مربوط به تیر ۱۴۰۵ هستند و در ماه دیگری نمایش داده نمی‌شوند. */
@@ -518,6 +518,7 @@ const formatIRR = value => `${money(value)} ریال`;
 const latinDigits = s => String(s ?? "").replace(/[۰-۹]/g,d=>"۰۱۲۳۴۵۶۷۸۹".indexOf(d));
 const scopeKey = s => latinDigits(s).toLowerCase().replace(/[\s_\-‌]/g,"").replace(/ي/g,"ی").replace(/ك/g,"ک");
 const regionForScope = name => {const key=scopeKey(name);return regions.find(region=>region.aliases.includes(key));};
+const numberOrNull = value => value === null || value === undefined || value === "" ? null : Number(value);
 
 function setApiState(kind, text) {
   const dot = document.querySelector(".live-dot");
@@ -527,9 +528,10 @@ function setApiState(kind, text) {
 }
 
 async function getJSON(url, options={}) {
+  const requestHeaders = options.headers || {};
   const response = await fetch(url, {
-    headers: {"Accept":"application/json", "Authorization":`Bearer ${localStorage.getItem("access_token")||""}`, ...(options.headers || {})},
-    ...options
+    ...options,
+    headers: {"Accept":"application/json", "Authorization":`Bearer ${localStorage.getItem("access_token")||""}`, ...requestHeaders}
   });
   if (!response.ok) {
     const detail = await response.text();
@@ -562,14 +564,24 @@ function cells(actual, target) {
 
 function renderMainTable(actuals) {
   let body = "";
+  let todayTotal = 0;
+  let weekTotal = 0;
   let monthTotal = 0;
+  let periodTotal = 0;
   let monthTargetTotal = 0;
+  let hasToday = false;
+  let hasWeek = false;
+  let hasMonth = false;
+  let hasPeriod = false;
   const hasApprovedTargets = YEAR === 1405 && MONTH === 4;
 
   for (const region of regions) {
-    const a = actuals[region.id] || {today:null,week:null,month:0,period:0,maxdate:null,status:"missing"};
+    const a = actuals[region.id] || {today:null,week:null,month:null,period:null,maxdate:null,status:"missing"};
     const t = hasApprovedTargets ? targets[region.id] : {today:null,week:null,month:null,period:null};
-    monthTotal += Number(a.month || 0);
+    if (a.today !== null) { todayTotal += Number(a.today || 0); hasToday = true; }
+    if (a.week !== null) { weekTotal += Number(a.week || 0); hasWeek = true; }
+    if (a.month !== null) { monthTotal += Number(a.month || 0); hasMonth = true; }
+    if (a.period !== null) { periodTotal += Number(a.period || 0); hasPeriod = true; }
     if (t.month !== null) monthTargetTotal += Number(t.month || 0);
 
     body += `<tr>
@@ -591,19 +603,21 @@ function renderMainTable(actuals) {
   };
 
   body += `<tr class="total"><td class="area">کل مناطق</td>
-    ${cells(null,totalTargets.today)}
-    ${cells(null,totalTargets.week)}
-    ${cells(monthTotal,totalTargets.month)}
-    ${cells(monthTotal,totalTargets.period)}
+    ${cells(hasToday ? todayTotal : null,totalTargets.today)}
+    ${cells(hasWeek ? weekTotal : null,totalTargets.week)}
+    ${cells(hasMonth ? monthTotal : null,totalTargets.month)}
+    ${cells(hasPeriod ? periodTotal : null,totalTargets.period)}
   </tr>`;
 
   document.getElementById("rows").innerHTML = body;
-  document.getElementById("sumToday").textContent = "در انتظار API روزانه";
-  document.getElementById("sumWeek").textContent = "در انتظار API روزانه";
-  document.getElementById("sumMonth").textContent = money(monthTotal);
-  document.getElementById("sumMonthDelta").innerHTML = hasApprovedTargets
-    ? deltaHTML(monthTotal,monthTargetTotal)
-    : '<span class="delta zero">هدف این ماه ثبت نشده</span>';
+  document.getElementById("sumToday").textContent = hasToday ? money(todayTotal) : "در دسترس نیست";
+  document.getElementById("sumWeek").textContent = hasWeek ? money(weekTotal) : "در دسترس نیست";
+  document.getElementById("sumMonth").textContent = hasMonth ? money(monthTotal) : "در دسترس نیست";
+  document.getElementById("sumMonthDelta").innerHTML = !hasMonth
+    ? '<span class="delta zero">داده در دسترس نیست</span>'
+    : hasApprovedTargets
+      ? deltaHTML(monthTotal,monthTargetTotal)
+      : '<span class="delta zero">هدف این ماه ثبت نشده</span>';
   return {monthTotal, monthTargetTotal};
 }
 
@@ -623,16 +637,16 @@ async function loadCollections() {
   }
   const actuals = {};
   for (const region of regions) {
-    actuals[region.id] = {today:null,week:null,month:0,period:0,maxdate:null,status:"missing"};
+    actuals[region.id] = {today:null,week:null,month:null,period:null,maxdate:null,status:"missing"};
   }
   for (const row of (data.scope_summaries || [])) {
     const region = regionForScope(row.scope_name);
     if (!region) continue;
     actuals[region.id] = {
-      today:Number(row.latest_day_collection || 0),
-      week:Number(row.weekly_collection || 0),
-      month:Number(row.monthly_collection || 0),
-      period:Number(row.total_collection || 0),
+      today:numberOrNull(row.latest_day_collection),
+      week:numberOrNull(row.weekly_collection),
+      month:numberOrNull(row.monthly_collection ?? row.paid_amount),
+      period:numberOrNull(row.total_collection ?? row.paid_amount),
       maxdate:faDigits(row.latest_payment_date || row.report_date || ""),
       status:"available"
     };
@@ -651,10 +665,18 @@ async function loadFinancialSettings() {
 function renderDebt(data) {
   const rows = (data.scope_summaries || []).map(row => {
     const region = regionForScope(row.scope_name);
+    const unpaidCount = numberOrNull(row.unpaid_bill_count);
+    const unpaidAmount = numberOrNull(
+      row.unpaid_bill_amount ?? (
+        row.issued_amount !== undefined && row.paid_amount !== undefined
+          ? Math.max(Number(row.issued_amount || 0) - Number(row.paid_amount || 0),0)
+          : null
+      )
+    );
     return `<tr>
       <td class="area">${region?.name || row.scope_name || "—"}<div class="meta">آخرین فایل: ${faDigits(row.report_date || "—")}</div></td>
-      <td>${money(row.unpaid_bill_count || 0)}</td>
-      <td>${formatIRR(row.unpaid_bill_amount || 0)}</td>
+      <td>${unpaidCount === null ? "—" : money(unpaidCount)}</td>
+      <td>${unpaidAmount === null ? "—" : formatIRR(unpaidAmount)}</td>
       <td>${formatIRR(row.overdue_debt || 0)}</td>
       <td>${faDigits(row.latest_payment_date || "—")}</td>
     </tr>`;
@@ -850,11 +872,15 @@ async function refreshDashboard() {
       `گزارش ${MONTH_NAMES[MONTH] || MONTH} ${faDigits(YEAR)} — آخرین داده: ${latestDate} — مبالغ به ریال`;
     document.getElementById("lastRefresh").textContent =
       `آخرین به‌روزرسانی مرورگر: ${new Date().toLocaleTimeString("fa-IR",{hour:"2-digit",minute:"2-digit"})}`;
-    const regionSum = (coreDashboardData.scope_summaries || []).reduce((sum,row)=>sum+Number(row.monthly_collection || 0),0);
-    const total = Number(coreDashboardData.metrics?.monthly_collection || 0);
-    document.getElementById("dataQualityNote").textContent = regionSum === total
-      ? `کنترل صحت موفق: جمع مناطق با وصول ماه (${formatIRR(total)}) برابر است.`
-      : `هشدار کنترل صحت: جمع مناطق ${formatIRR(regionSum)} و جمع کل ${formatIRR(total)} است.`;
+    const scopeRows = coreDashboardData.scope_summaries || [];
+    const hasPeriodMetrics = scopeRows.some(row => Object.prototype.hasOwnProperty.call(row,"monthly_collection"));
+    const regionSum = scopeRows.reduce((sum,row)=>sum+Number((hasPeriodMetrics ? row.monthly_collection : row.paid_amount) || 0),0);
+    const total = Number((hasPeriodMetrics ? coreDashboardData.metrics?.monthly_collection : coreDashboardData.metrics?.paid_bill_amount) || 0);
+    document.getElementById("dataQualityNote").textContent = hasPeriodMetrics
+      ? (regionSum === total
+        ? `کنترل صحت موفق: جمع مناطق با وصول ماه (${formatIRR(total)}) برابر است.`
+        : `هشدار کنترل صحت: جمع مناطق ${formatIRR(regionSum)} و جمع کل ${formatIRR(total)} است.`)
+      : `API فعلی تفکیک روز/هفته/ماه منطقه‌ای ندارد؛ مبلغ وصول آخرین فایل هر منطقه (${formatIRR(regionSum)}) نمایش داده شده است.`;
     setApiState("online","اتصال API برقرار است");
   } catch (error) {
     console.error(error);

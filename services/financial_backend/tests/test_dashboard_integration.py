@@ -14,7 +14,19 @@ def test_financial_dashboard_reads_collections_from_core_api():
     assert "row.monthly_collection" in dashboard
     assert "row.weekly_collection" in dashboard
     assert "row.latest_day_collection" in dashboard
+    assert "row.monthly_collection ?? row.paid_amount" in dashboard
+    assert "row.total_collection ?? row.paid_amount" in dashboard
     assert "finance/settings" in dashboard
+
+
+def test_expense_post_keeps_authorization_header_and_region_ids():
+    dashboard = (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")
+    request_helper = dashboard.split("async function getJSON", 1)[1].split("function deltaHTML", 1)[0]
+
+    assert request_helper.index("...options") < request_helper.index('headers: {"Accept"')
+    assert '"Authorization":`Bearer ${localStorage.getItem("access_token")||""}`' in request_helper
+    assert '{region_id:5,id:"r3"' in dashboard
+    assert '{region_id:4,id:"a3"' in dashboard
 
 
 def test_financial_pages_respect_backend_proxy_prefix():
