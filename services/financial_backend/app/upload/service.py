@@ -9,12 +9,12 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import CollectionRecord, CollectionUpload, MonthlyCollection, User
 from app.upload.parser import WorkbookReadError, read_first_sheet
-from app.upload.validator import ValidationIssue, validate_rows
+from app.upload.validator import validate_rows
 
 UPLOAD_ROOT = Path(os.getenv("COLLECTION_UPLOAD_DIR", "uploads/collections"))
 MAX_FILE_SIZE = int(os.getenv("COLLECTION_MAX_FILE_SIZE", str(20 * 1024 * 1024)))
@@ -46,8 +46,15 @@ def save_and_validate_file(
 
     file_hash = hashlib.sha256(content).hexdigest()
     existing = db.scalar(select(CollectionUpload).where(CollectionUpload.file_hash == file_hash))
-    if existing is not None:
-        raise HTTPException(status_code=409, detail=f"این فایل قبلاً با شناسه {existing.id} ثبت شده است")
+    if existing is not None and (
+        existing.region_id != region_id
+        or existing.persian_year != year
+        or existing.persian_month != month
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="همین فایل قبلاً برای واحد یا دوره دیگری ثبت شده است؛ واحد، سال و ماه را بررسی کنید",
+        )
 
     UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
     stored_path = UPLOAD_ROOT / f"{uuid4().hex}{suffix}"
@@ -60,38 +67,44 @@ def save_and_validate_file(
         stored_path.unlink(missing_ok=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if result.records:
-        hashes = [record["source_row_hash"] for record in result.records]
-        duplicate_hashes = set(db.scalars(
-            select(CollectionRecord.source_row_hash).where(
-                CollectionRecord.region_id == region_id,
-                CollectionRecord.source_row_hash.in_(hashes),
-            )
-        ).all())
-        if duplicate_hashes:
-            for record in result.records:
-                if record["source_row_hash"] in duplicate_hashes:
-                    result.errors.append(ValidationIssue(record["source_row_number"], None, "این ردیف قبلاً در سامانه ثبت شده است"))
-            result.invalid_rows += len(duplicate_hashes)
-            result.valid_rows = max(0, result.valid_rows - len(duplicate_hashes))
-
+    # فایل‌های وصول ماهانه Snapshot تجمعی هستند. بنابراین وجود رکوردهای نسخه قبلی
+    # در همان واحد/سال/ماه نباید اعتبارسنجی نسخه جدید را مسدود کند؛ نسخه جدید
+    # هنگام ثبت نهایی به صورت اتمیک جایگزین Snapshot قبلی همان دوره می‌شود.
     summary = result.summary(include_records=True)
-    upload = CollectionUpload(
-        region_id=region_id,
-        persian_year=year,
-        persian_month=month,
-        original_filename=Path(file.filename or "upload").name,
-        stored_path=str(stored_path),
-        file_hash=file_hash,
-        status="validated" if result.can_import else "rejected",
-        total_rows=result.total_rows,
-        valid_rows=result.valid_rows,
-        invalid_rows=result.invalid_rows,
-        total_amount_irr=result.total_amount_irr,
-        validation_result=json.dumps(summary, ensure_ascii=False),
-        uploaded_by=user.id,
-    )
-    db.add(upload)
+
+    if existing is None:
+        upload = CollectionUpload(
+            region_id=region_id,
+            persian_year=year,
+            persian_month=month,
+            original_filename=Path(file.filename or "upload").name,
+            stored_path=str(stored_path),
+            file_hash=file_hash,
+            status="validated" if result.can_import else "rejected",
+            total_rows=result.total_rows,
+            valid_rows=result.valid_rows,
+            invalid_rows=result.invalid_rows,
+            total_amount_irr=result.total_amount_irr,
+            validation_result=json.dumps(summary, ensure_ascii=False),
+            uploaded_by=user.id,
+        )
+        db.add(upload)
+    else:
+        # اگر دقیقاً همان فایل برای همین دوره دوباره انتخاب شد، همان شناسه را
+        # دوباره وارد چرخه اعتبارسنجی می‌کنیم و قفل «قبلاً ثبت نهایی شده» نداریم.
+        upload = existing
+        upload.original_filename = Path(file.filename or "upload").name
+        upload.stored_path = str(stored_path)
+        upload.status = "validated" if result.can_import else "rejected"
+        upload.total_rows = result.total_rows
+        upload.valid_rows = result.valid_rows
+        upload.invalid_rows = result.invalid_rows
+        upload.total_amount_irr = result.total_amount_irr
+        upload.validation_result = json.dumps(summary, ensure_ascii=False)
+        upload.uploaded_by = user.id
+        upload.uploaded_at = datetime.utcnow()
+        upload.imported_at = None
+
     db.commit()
     db.refresh(upload)
 
@@ -105,8 +118,6 @@ def save_and_validate_file(
 
 def import_validated_upload(db: Session, upload: CollectionUpload, user: User) -> dict:
     assert_region_access(user, upload.region_id)
-    if upload.status == "imported":
-        raise HTTPException(status_code=409, detail="این فایل قبلاً ثبت نهایی شده است")
     if upload.status != "validated":
         raise HTTPException(status_code=422, detail="فقط فایل بدون خطای اعتبارسنجی قابل ثبت نهایی است")
 
@@ -115,15 +126,18 @@ def import_validated_upload(db: Session, upload: CollectionUpload, user: User) -
     if not records:
         raise HTTPException(status_code=422, detail="رکورد معتبری برای ثبت وجود ندارد")
 
-    hashes = [record["source_row_hash"] for record in records]
-    duplicate = db.scalar(select(CollectionRecord.id).where(
-        CollectionRecord.region_id == upload.region_id,
-        CollectionRecord.source_row_hash.in_(hashes),
-    ))
-    if duplicate is not None:
-        raise HTTPException(status_code=409, detail="بخشی از داده‌های فایل در فاصله اعتبارسنجی تا ثبت، قبلاً وارد شده‌اند؛ فایل را دوباره اعتبارسنجی کنید")
-
     try:
+        # ثبت هر فایل برای یک واحد/ماه، Snapshot قبلی همان دوره را جایگزین می‌کند.
+        # به این ترتیب آپلود مجدد باعث دوبرابر شدن وصول یا تکرار رکوردها نمی‌شود.
+        db.execute(
+            delete(CollectionRecord).where(
+                CollectionRecord.region_id == upload.region_id,
+                CollectionRecord.persian_year == upload.persian_year,
+                CollectionRecord.persian_month == upload.persian_month,
+            )
+        )
+        db.flush()
+
         for record in records:
             db.add(CollectionRecord(
                 upload_id=upload.id,
