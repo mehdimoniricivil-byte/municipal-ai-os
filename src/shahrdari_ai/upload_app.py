@@ -705,11 +705,17 @@ def _v1_dashboard_data(
     scope_summaries = []
     for snapshot in snapshots:
         import_run_id = int(snapshot["id"])
+        snapshot_rows = rows_by_import_run.get(
+            import_run_id,
+            [],
+        )
         item_metrics = _v1_record_metrics(
-            rows_by_import_run.get(
-                import_run_id,
-                [],
-            )
+            snapshot_rows
+        )
+        item_management_metrics = _v1_management_metrics(
+            snapshot_rows,
+            [snapshot],
+            item_metrics,
         )
         scope_summaries.append(
             {
@@ -728,6 +734,27 @@ def _v1_dashboard_data(
                 ],
                 "overdue_debt": item_metrics[
                     "overdue_debt"
+                ],
+                "unpaid_bill_count": item_metrics[
+                    "unpaid_bill_count"
+                ],
+                "unpaid_bill_amount": item_metrics[
+                    "unpaid_bill_amount"
+                ],
+                "total_collection": item_management_metrics[
+                    "total_collection"
+                ],
+                "monthly_collection": item_management_metrics[
+                    "monthly_collection"
+                ],
+                "weekly_collection": item_management_metrics[
+                    "weekly_collection"
+                ],
+                "latest_day_collection": item_management_metrics[
+                    "latest_day_collection"
+                ],
+                "latest_payment_date": item_management_metrics[
+                    "latest_payment_date"
                 ],
             }
         )

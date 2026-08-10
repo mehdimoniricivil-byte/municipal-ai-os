@@ -2,3 +2,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 var/
+.env
+*.env.staging
+services/financial_backend/storage/
+services/financial_backend/uploads/
+services/financial_backend/backups/
