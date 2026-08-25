@@ -16,10 +16,10 @@
   .rule{width:min(640px,90%);height:2px;margin:28px auto;background:linear-gradient(90deg,transparent,var(--gold),transparent)}
   .phoneclock{margin:0 auto 18px;display:inline-flex;gap:10px;align-items:center;border:1px solid rgba(214,166,63,.45);border-radius:999px;padding:10px 16px;font-weight:800;font-size:14px}
   .phoneclock strong{font-family:"SFMono-Regular",Consolas,monospace;font-size:17px;direction:ltr;color:var(--gold)}
-  .timer{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
-  .unit{background:linear-gradient(180deg,#151515,#0d0d0d);border:1px solid rgba(214,166,63,.5);border-radius:20px;padding:22px 8px 18px;box-shadow:0 16px 40px rgba(0,0,0,.35)}
-  .num{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:clamp(38px,8vw,82px);line-height:1;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.06em;direction:ltr}
-  .label{margin-top:12px;color:var(--gold);font-size:11px;font-weight:900;letter-spacing:.10em;direction:ltr}
+  .timer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;direction:ltr}
+  .unit{background:linear-gradient(180deg,#151515,#0d0d0d);border:1px solid rgba(214,166,63,.5);border-radius:20px;padding:24px 8px 18px;box-shadow:0 16px 40px rgba(0,0,0,.35);min-width:0}
+  .num{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace;font-size:clamp(46px,10vw,96px);line-height:1;font-weight:900;font-variant-numeric:tabular-nums;letter-spacing:-.06em;direction:ltr;white-space:nowrap}
+  .label{margin-top:12px;color:var(--gold);font-size:12px;font-weight:900;letter-spacing:.10em;direction:ltr}
   .date{margin-top:28px;font-size:clamp(18px,3vw,26px);font-weight:900}
   .slogan{margin-top:14px;color:var(--gold);font-size:clamp(17px,3vw,24px);font-weight:800}
   .live{display:inline-flex;align-items:center;gap:9px;margin-top:24px;border:1px solid rgba(214,166,63,.45);border-radius:999px;padding:10px 14px;font-size:12px;font-weight:900;direction:ltr}
@@ -27,7 +27,7 @@
   .done{display:none;color:var(--gold);font-size:clamp(46px,10vw,100px);font-weight:1000;direction:ltr;margin:28px 0 10px}
   .small{margin-top:18px;color:var(--muted);font-size:12px}
   @keyframes pulse{50%{opacity:.25;transform:scale(.7)}}
-  @media(max-width:560px){body{padding:16px}.timer{gap:7px}.unit{padding:18px 4px 14px;border-radius:15px}.label{font-size:9px;letter-spacing:.04em}}
+  @media(max-width:560px){body{padding:16px}.timer{gap:7px}.unit{padding:19px 3px 14px;border-radius:15px}.num{font-size:clamp(42px,13vw,68px)}.label{font-size:10px;letter-spacing:.03em}}
   @media(prefers-reduced-motion:reduce){.dot{animation:none}}
 </style>
 </head>
@@ -39,7 +39,6 @@
   <div class="rule"></div>
   <div class="phoneclock"><span>ساعت گوشی:</span><strong id="phoneTime">--:--:--</strong></div>
   <section class="timer" id="timer" aria-live="polite">
-    <div class="unit"><div class="num" id="days">00</div><div class="label">DAYS</div></div>
     <div class="unit"><div class="num" id="hours">00</div><div class="label">HOURS</div></div>
     <div class="unit"><div class="num" id="minutes">00</div><div class="label">MINUTES</div></div>
     <div class="unit"><div class="num" id="seconds">00</div><div class="label">SECONDS</div></div>
@@ -48,7 +47,7 @@
   <div class="date">چهارشنبه 26 AUG — ساعت 16:00 به وقت ایران</div>
   <div class="slogan">کرکس بی‌رحم به هیچ تیمی رحم نمی‌کند…</div>
   <div class="live"><span class="dot"></span> SYNCED TO YOUR PHONE</div>
-  <div class="small">زمان باقی‌مانده مستقیماً از ساعت فعلی گوشی شما محاسبه می‌شود.</div>
+  <div class="small">از چپ: ساعت، دقیقه، ثانیه — هماهنگ با ساعت گوشی شما.</div>
 </main>
 <script>
 (function(){
@@ -56,7 +55,6 @@
   const timer = document.getElementById("timer");
   const done = document.getElementById("done");
   const phoneTime = document.getElementById("phoneTime");
-  const d = document.getElementById("days");
   const h = document.getElementById("hours");
   const m = document.getElementById("minutes");
   const s = document.getElementById("seconds");
@@ -68,8 +66,7 @@
     if(diff <= 0){ timer.style.display = "none"; done.style.display = "block"; return; }
     timer.style.display = "grid"; done.style.display = "none";
     const total = Math.floor(diff/1000);
-    d.textContent = pad(Math.floor(total/86400));
-    h.textContent = pad(Math.floor((total%86400)/3600));
+    h.textContent = pad(Math.floor(total/3600));
     m.textContent = pad(Math.floor((total%3600)/60));
     s.textContent = pad(total%60);
   }
